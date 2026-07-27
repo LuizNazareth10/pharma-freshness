@@ -1,0 +1,70 @@
+name: pharma-freshness
+
+x-minio-client-common: &minio-client-common
+  image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
+  profiles: [automation]
+  depends_on:
+    minio:
+      condition: service_healthy
+  environment:
+    MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+    MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    MINIO_BUCKET: ${MINIO_BUCKET:-farmacovigilancia}
+  networks:
+    - lakehouse
+
+services:
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - lakehouse
+
+  # Este serviço não sobe no `docker compose up -d` normal. Ele existe para
+  # reproduzir por linha de comando o bucket e o upload feitos manualmente no console.
+  minio-bootstrap:
+    <<: *minio-client-common
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null
+        mc mb --ignore-existing "local/$${MINIO_BUCKET}"
+        mc cp /seed/arquivo-teste.json "local/$${MINIO_BUCKET}/laboratorio/arquivo-teste.json"
+        mc stat "local/$${MINIO_BUCKET}/laboratorio/arquivo-teste.json"
+    volumes:
+      - ./samples/minio:/seed:ro
+
+  # Verificação somente-leitura: falha se o bucket ou o objeto não existirem.
+  minio-verify:
+    <<: *minio-client-common
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null
+        mc stat "local/$${MINIO_BUCKET}"
+        mc stat "local/$${MINIO_BUCKET}/laboratorio/arquivo-teste.json"
+        mc ls --recursive "local/$${MINIO_BUCKET}"
+
+volumes:
+  minio-data:
+    name: pharma-freshness-minio-data
+
+networks:
+  lakehouse:
+    name: pharma-freshness-network
+

@@ -1,0 +1,10 @@
+# Credenciais locais e artefatos gerados pelos laboratórios
+.env
+.local/
+
+# Arquivos comuns do sistema/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+

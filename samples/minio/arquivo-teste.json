@@ -1,0 +1,7 @@
+{
+  "projeto": "pharma-freshness-pipeline",
+  "laboratorio": "fase-1-dia-1",
+  "descricao": "Objeto de teste para aprender MinIO e armazenamento compatível com S3.",
+  "contem_dado_clinico_real": false
+}
+
