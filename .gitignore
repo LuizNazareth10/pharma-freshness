@@ -1,10 +1,18 @@
 # Credenciais locais e artefatos gerados pelos laboratórios
 .env
 .local/
+.venv/
+.dlt/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
 
 # Arquivos comuns do sistema/editor
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
-

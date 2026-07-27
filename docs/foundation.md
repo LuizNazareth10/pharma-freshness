@@ -92,8 +92,8 @@ O `dlt` é o padrão moderno open-source para extrair de APIs REST. Cuida automa
 ```python
 import dlt
 
-@dlt.resource(primary_key="report_id", write_disposition="merge")
-def faers_events(updated_since=dlt.sources.incremental("receivedate")):
+@dlt.resource(primary_key="safetyreportid", write_disposition="merge")
+def faers_events(updated_since=dlt.sources.incremental("receiptdate")):
     # lógica de extração
     yield from api.get_events(since=updated_since.start_value)
 ```
@@ -309,25 +309,34 @@ Cada "dia" é um bloco de aprendizado, não uma obrigação de 24 horas. O ritmo
 
 **Objetivo**: dado real da FDA chega ao lakehouse de forma confiável.
 
+> **Status da implementação:** concluída e validada localmente. O tutorial executável está em
+> [`docs/fase-2.md`](fase-2.md), os contratos em
+> [`docs/contratos-dados-fase-2.md`](contratos-dados-fase-2.md) e as decisões arquiteturais em
+> [`docs/decisoes-arquitetura-fase-2.md`](decisoes-arquitetura-fase-2.md).
+
 #### Dia 3 — Primeira ingestão com dlt
 
 **O que fazer**:
 1. Instalar dlt e configurar para gravar no MinIO
 2. Criar um extrator simples para o DailyMed
 3. Gravar o resultado como Parquet na pasta `bronze/dailymed/` do bucket
-4. **Carimbrar cada registro** com `ingest_time = datetime.utcnow()` — esse campo é fundamental para medir o frescor depois
+4. **Carimbrar cada registro** com `ingest_time = datetime.now(UTC)` — esse campo é fundamental para medir o frescor depois e preserva o fuso explicitamente
 
 **Exemplo de estrutura**:
 ```python
-@dlt.resource(primary_key="set_id", write_disposition="merge")
+@dlt.resource(primary_key="setid", write_disposition="append")
 def dailymed_spls():
     for record in api.get_spls():
         yield {
             **record,
-            "ingest_time": datetime.utcnow().isoformat(),
+            "ingest_time": datetime.now(UTC),
             "fonte": "dailymed"
         }
 ```
+
+> Na implementação, a bronze Parquet é append-only e preserva as cargas brutas. O `MERGE/UPSERT`
+> ocorre na tabela Iceberg por `setid`. Essa separação é intencional: Parquet é formato de arquivo;
+> Iceberg fornece a semântica transacional de tabela.
 
 **O que você aprende**: extração com dlt, ELT (dado bruto vai primeiro para o destino), camada bronze, formato Parquet
 

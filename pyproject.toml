@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pharma-freshness-pipeline"
+version = "0.2.0"
+description = "Pipeline didatico de farmacovigilancia com dlt, MinIO e Apache Iceberg"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "dlt[filesystem]==1.29.1",
+  "pyarrow==22.0.0",
+  "pyiceberg[sql-sqlite,s3fs]==0.11.1",
+  "psutil==7.2.2",
+  "python-dotenv==1.2.2",
+  "requests==2.34.2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==9.1.1",
+  "ruff==0.16.0",
+]
+
+[project.scripts]
+pharma-pipeline = "pharma_pipeline.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
