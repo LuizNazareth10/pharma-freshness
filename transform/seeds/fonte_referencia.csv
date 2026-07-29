@@ -1,4 +1,4 @@
-fonte,nome_exibicao,mantenedor,cadencia_esperada,url_api,descricao
-dailymed,DailyMed,National Library of Medicine,diaria,https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json,Indice de bulas estruturadas (SPL) com versao e data de publicacao.
-faers,FAERS via openFDA,Food and Drug Administration,diaria,https://api.fda.gov/drug/event.json,Relatos espontaneos de eventos adversos de medicamentos (ICSR).
-res,RES via openFDA,Food and Drug Administration,semanal,https://api.fda.gov/drug/enforcement.json,Acoes de recolhimento de medicamentos classificadas por risco.
+fonte,nome_exibicao,mantenedor,cadencia_esperada,url_api,descricao,sla_ingestao_horas,sla_frescor_fonte_horas,frescor_fonte_observacao
+dailymed,DailyMed,National Library of Medicine,diaria,https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json,Indice de bulas estruturadas (SPL) com versao e data de publicacao.,36,72,Publicacao diaria confirmada na pratica: o indice traz bulas do proprio dia.
+faers,FAERS via openFDA,Food and Drug Administration,diaria,https://api.fda.gov/drug/event.json,Relatos espontaneos de eventos adversos de medicamentos (ICSR).,36,3600,O endpoint openFDA e recarregado em lotes; o painel publico da FDA e que e diario. Limiar de 150 dias derivado do atraso REAL medido em 2026-07-28 (2874 h) mais margem para o proximo lote. Usar a cadencia prometida (24 h) faria o alerta disparar sempre e ensinaria a equipe a ignora-lo.
+res,RES via openFDA,Food and Drug Administration,semanal,https://api.fda.gov/drug/enforcement.json,Acoes de recolhimento de medicamentos classificadas por risco.,180,336,Publicacao semanal com atraso de alguns dias entre a acao e o relatorio de enforcement.

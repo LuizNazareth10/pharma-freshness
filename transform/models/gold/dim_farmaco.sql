@@ -1,32 +1,53 @@
 {#
   Dimensao conformada de farmaco.
 
-  Grao: uma identidade de farmaco.
+  GRAO: um nome de farmaco normalizado, como a fonte o reportou.
+  Chave: `id_farmaco` = hash(`nome_normalizado`).
 
-  Definicao de identidade -- a decisao central desta dimensao (macro `chave_identidade_farmaco`):
-    - com RxCUI: a identidade e o RxCUI. Todos os nomes que resolvem para o mesmo ingrediente
-      viram UMA linha. "TACROLIMUS", "Tacrolimus" e "PROGRAF" deixam de contar separado.
-    - sem RxCUI: a identidade e o proprio nome normalizado. O farmaco continua na dimensao,
-      marcado como nao mapeado.
-    - sem nome algum: cai no membro "nao informado" descrito abaixo.
+  Por que o grao e o NOME e nao o ingrediente
+  -------------------------------------------
+  A primeira versao usava o ingrediente RxNorm como identidade: todos os nomes que resolvem
+  para o mesmo RxCUI viravam UMA linha. Era mais elegante, e quebrou em producao.
 
-  A segunda regra e deliberada. Descartar o que o RxNorm nao conhece silenciaria justamente os
-  produtos mais irregulares -- combinacoes, manipulados, itens importados -- que sao os que
-  mais interessam a farmacovigilancia. Um evento adverso nunca some do modelo por falta de
-  vocabulario; ele fica visivel e rotulado como nao mapeado.
+  O RxCUI e enriquecimento, e enriquecimento melhora com o tempo. `RXNORM_MAX_LOOKUPS` limita
+  quantos nomes novos sao resolvidos por execucao, entao um farmaco entra no fato hoje como
+  `nome:CORTISONE` e, amanha, ja resolvido, a dimensao passa a chama-lo `rxcui:3117`. Como o
+  fato e incremental, as linhas antigas continuam apontando para a identidade velha -- que a
+  reconstrucao da dimensao acabou de apagar.
+
+  Em 2026-07-29 isso produziu 6.066 linhas de fato orfas, e o teste `relationships` reprovou.
+
+  A regra geral que evita a classe inteira desse problema: **uma chave substituta so pode
+  depender de dados que a linha de fato ja carrega e que nao mudam.** O nome reportado nunca
+  muda; o RxCUI, sim.
+
+  A conformacao nao se perdeu -- ela virou atributo
+  -------------------------------------------------
+  `id_ingrediente` e `rxcui` agrupam nomes diferentes do mesmo principio ativo. A diferenca e
+  que agora eles sao ATRIBUTOS: quando o RxNorm aprende algo novo, a dimensao e reescrita no
+  lugar e nenhuma chave estrangeira e invalidada.
+
+  Contar eventos por principio ativo:
+
+      select d.rxnorm_nome, count(distinct f.safetyreportid)
+      from gold.fato_evento_adverso f
+      join gold.dim_farmaco d using (id_farmaco)
+      where d.identidade_confiavel
+      group by d.rxnorm_nome
+
+  Contar por nome reportado (util para distinguir marca de generico) e o `group by` direto em
+  `d.nome_farmaco`. As duas perguntas passaram a ser respondiveis; antes, so a primeira era.
 
   Membro "nao informado"
   ----------------------
   Nem todo recall do RES traz nome de substancia, generico ou marca. Sem uma linha para
-  representar essa ausencia, o fato ficaria com uma chave estrangeira orfa -- e o teste de
-  integridade referencial falharia com razao.
+  representar essa ausencia, o fato ficaria com chave estrangeira orfa. Deixar a FK nula
+  obrigaria todo relatorio a usar LEFT JOIN e faria as linhas sumirem de qualquer INNER JOIN;
+  um membro explicito mantem a integridade e deixa "nao informado" visivel como categoria.
 
-  A alternativa comum e deixar a FK nula, mas isso obriga todo relatorio a usar LEFT JOIN e faz
-  as linhas sumirem silenciosamente de qualquer INNER JOIN. Um membro explicito mantem a
-  integridade referencial e deixa "nao informado" visivel como categoria, em vez de ausente.
-
-  Consequencia pratica ao consultar: agregacoes por farmaco devem considerar
-  `identidade_confiavel` quando o objetivo for comparar volumes entre farmacos.
+  Farmacos que o RxNorm nao conhece PERMANECEM na dimensao, marcados por
+  `mapeado_rxnorm = false`. Descarta-los silenciaria justamente os produtos mais irregulares --
+  combinacoes, manipulados, importados -- que sao os que mais interessam a farmacovigilancia.
 #}
 
 with mapeamento as (
@@ -36,48 +57,19 @@ with mapeamento as (
 
 ),
 
-identidade as (
-
-    select
-        *,
-        {{ chave_identidade_farmaco('rxcui', 'nome_normalizado') }} as chave_identidade
-    from mapeamento
-
-),
-
-agrupado as (
-
-    select
-        chave_identidade,
-        max(rxcui)                                          as rxcui,
-        max(rxnorm_nome)                                    as rxnorm_nome,
-        max(rxnorm_tty)                                     as rxnorm_tty,
-        max(tipo_correspondencia)                           as tipo_correspondencia,
-        max(score)                                          as score_correspondencia,
-        bool_or(nivel_ingrediente)                          as nivel_ingrediente,
-        max(consultado_em)                                  as rxnorm_consultado_em,
-
-        -- Nomes de origem que colapsaram nesta identidade. Guardar isso torna a normalizacao
-        -- auditavel: da para explicar por que dois nomes viraram a mesma linha.
-        list_sort(list_distinct(list(nome_normalizado)))     as nomes_originais,
-        count(distinct nome_normalizado)                    as qtd_nomes_originais,
-        min(nome_normalizado)                               as nome_representativo
-    from identidade
-    group by chave_identidade
-
-),
-
 observados as (
 
     select
-        {{ chave_hash(['chave_identidade']) }}              as id_farmaco,
+        {{ id_farmaco_de('nome_normalizado') }}             as id_farmaco,
+        nome_normalizado,
+        coalesce(rxnorm_nome, nome_normalizado)             as nome_farmaco,
+
+        -- --- enriquecimento RxNorm: atributos, nunca chave ---------------------------------
         rxcui,
-        coalesce(rxnorm_nome, nome_representativo)          as nome_farmaco,
-        nome_representativo,
         rxnorm_nome,
         rxnorm_tty,
         tipo_correspondencia,
-        score_correspondencia,
+        score                                               as score_correspondencia,
         nivel_ingrediente,
         rxcui is not null                                   as mapeado_rxnorm,
 
@@ -85,10 +77,12 @@ observados as (
         -- apresentacao (SCD/SBD/BN) identifica um produto, nao o principio ativo.
         rxcui is not null and nivel_ingrediente             as identidade_confiavel,
 
-        nomes_originais,
-        qtd_nomes_originais,
-        rxnorm_consultado_em
-    from agrupado
+        -- Rollup por principio ativo. Nomes distintos que resolvem para o mesmo ingrediente
+        -- compartilham este valor, permitindo agrupar sem depender da chave.
+        {{ id_ingrediente_de('rxcui', 'nome_normalizado') }} as id_ingrediente,
+
+        consultado_em                                       as rxnorm_consultado_em
+    from mapeamento
 
 ),
 
@@ -96,9 +90,9 @@ nao_informado as (
 
     select
         {{ chave_hash(["'" ~ chave_farmaco_nao_informado() ~ "'"]) }} as id_farmaco,
-        cast(null as varchar)                               as rxcui,
+        cast(null as varchar)                               as nome_normalizado,
         'Nao informado'                                     as nome_farmaco,
-        cast(null as varchar)                               as nome_representativo,
+        cast(null as varchar)                               as rxcui,
         cast(null as varchar)                               as rxnorm_nome,
         cast(null as varchar)                               as rxnorm_tty,
         'nao_mapeado'                                       as tipo_correspondencia,
@@ -106,8 +100,7 @@ nao_informado as (
         false                                               as nivel_ingrediente,
         false                                               as mapeado_rxnorm,
         false                                               as identidade_confiavel,
-        cast([] as varchar[])                               as nomes_originais,
-        0                                                   as qtd_nomes_originais,
+        {{ chave_hash(["'" ~ chave_farmaco_nao_informado() ~ "'"]) }} as id_ingrediente,
         cast(null as varchar)                               as rxnorm_consultado_em
 
 )

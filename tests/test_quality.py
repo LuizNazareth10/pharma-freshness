@@ -43,6 +43,64 @@ def test_fato_valido_passa_no_contrato() -> None:
     assert resultado.rows == 2
 
 
+def test_codigo_fora_do_dominio_e_tolerado_quando_e_pontual() -> None:
+    """Um erro de preenchimento na origem nao pode derrubar o contrato inteiro.
+
+    A FDA enviou um unico relato com `drugcharacterization = 4`, valor que o padrao ICH E2B
+    nao define. Reprovar a publicacao por causa de uma linha em dezenas de milhares seria
+    desproporcional -- e ensinaria a equipe a rodar a validacao com os olhos fechados.
+    """
+    codigos = [1] * 199 + [4]
+    frame = pd.DataFrame(
+        {
+            "id_evento": [f"e{i}" for i in range(200)],
+            "id_farmaco": ["f1"] * 200,
+            "id_reacao": ["r1"] * 200,
+            "id_fonte": ["s1"] * 200,
+            "safetyreportid": [str(i) for i in range(200)],
+            "caracterizacao_codigo": codigos,
+            "latencia_atualizacao_horas": [10] * 200,
+            "receivedate": [date(2026, 3, 1)] * 200,
+            "event_time": [datetime(2026, 3, 1, tzinfo=UTC)] * 200,
+            "ingest_time": [datetime(2026, 7, 1, tzinfo=UTC)] * 200,
+            "fonte": ["faers"] * 200,
+        }
+    )
+
+    resultado = validar_dataframe("gold.fato_evento_adverso", frame)
+
+    assert resultado.success, _falhas(resultado)
+
+
+def test_codigo_fora_do_dominio_reprova_quando_vira_sistemico() -> None:
+    """A tolerancia tem limite: um dominio novo na fonte precisa aparecer.
+
+    Se metade das linhas passa a usar um codigo desconhecido, nao e mais erro de digitacao --
+    e a fonte mudou de vocabulario, e o modelo precisa ser revisto antes de seguir publicando.
+    """
+    codigos = [1] * 100 + [4] * 100
+    frame = pd.DataFrame(
+        {
+            "id_evento": [f"e{i}" for i in range(200)],
+            "id_farmaco": ["f1"] * 200,
+            "id_reacao": ["r1"] * 200,
+            "id_fonte": ["s1"] * 200,
+            "safetyreportid": [str(i) for i in range(200)],
+            "caracterizacao_codigo": codigos,
+            "latencia_atualizacao_horas": [10] * 200,
+            "receivedate": [date(2026, 3, 1)] * 200,
+            "event_time": [datetime(2026, 3, 1, tzinfo=UTC)] * 200,
+            "ingest_time": [datetime(2026, 7, 1, tzinfo=UTC)] * 200,
+            "fonte": ["faers"] * 200,
+        }
+    )
+
+    resultado = validar_dataframe("gold.fato_evento_adverso", frame)
+
+    assert not resultado.success
+    assert ("expect_column_values_to_be_in_set", "caracterizacao_codigo") in _falhas(resultado)
+
+
 def test_fonte_nula_reprova() -> None:
     """A regra central do projeto: toda linha precisa citar sua fonte."""
     resultado = validar_dataframe("gold.fato_evento_adverso", _fato_valido(fonte=["faers", None]))

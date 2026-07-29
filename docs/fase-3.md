@@ -175,7 +175,7 @@ Duas consequências:
   por identificador, não por nome — muito mais confiável do que casar strings.
 - **`rxcui` vem como uma lista longa**, com os RxCUI de *todas as apresentações* do produto
   (dose, forma, marca). **Não** é o ingrediente. Por isso ele é guardado como indício para
-  auditoria, e a identidade do fármaco continua vindo do RxNorm.
+  auditoria, e o princípio ativo continua vindo do RxNorm.
 
 ### 3.5 Normalização RxNorm
 
@@ -489,11 +489,20 @@ Note os três filtros: `suspeito_primario` descarta medicamentos concomitantes;
 **O RxNorm realmente unificou nomes?**
 
 ```sql
-select nome_farmaco, qtd_nomes_originais, nomes_originais
+select
+    rxnorm_nome,
+    count(*)                            as nomes_reportados,
+    list_sort(list(nome_normalizado))   as quais
 from gold.dim_farmaco
-where qtd_nomes_originais > 1
-order by qtd_nomes_originais desc;
+where identidade_confiavel
+group by id_ingrediente, rxnorm_nome
+having count(*) > 1
+order by nomes_reportados desc;
 ```
+
+> Desde a Fase 4, a unificação por princípio ativo é um `group by id_ingrediente`, e não mais
+> uma colapsagem embutida na chave — ver
+> [contratos, `gold.dim_farmaco`](contratos-dados-fase-3.md#golddim_farmaco).
 
 **Frescor observado por fonte** (prévia do Dia 10):
 
@@ -534,6 +543,15 @@ A expressão da identidade do fármaco estava **repetida em quatro modelos**. Fo
 macro `chave_identidade_farmaco`, que agora é a única definição da regra.
 
 Sem os testes, os três defeitos teriam produzido números plausíveis e errados.
+
+> **Epílogo, escrito na Fase 4.** A correção do item 1 — "resolver o RxCUI antes de agrupar" —
+> resolvia a duplicação, mas deixava um problema mais profundo de pé: a chave passava a
+> depender do RxCUI, que **muda entre execuções** conforme o cache do RxNorm cresce. Com o
+> fato incremental, isso produziu 6.066 linhas órfãs assim que o volume real chegou.
+>
+> A correção definitiva foi tirar o enriquecimento da chave e deixá-lo como atributo. A lição
+> que fica: *uma chave substituta só pode depender de dados que a linha de fato já carrega e
+> que não mudam.* Ver [Fase 4, seção 8](fase-4.md#8-o-que-quebrou-de-verdade).
 
 ---
 

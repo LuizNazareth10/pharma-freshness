@@ -65,43 +65,30 @@ with relatos as (
 
 ),
 
-medicamentos_resolvidos as (
+medicamentos as (
 
-    -- O RxCUI precisa ser resolvido ANTES do agrupamento. Agrupar por nome e so depois
-    -- resolver produziria duas linhas para o mesmo farmaco quando dois nomes distintos
-    -- apontam para o mesmo ingrediente -- exatamente o caso que o RxNorm existe para unificar.
+    -- Agrupa pelo NOME normalizado, que e a identidade estavel do farmaco.
+    --
+    -- A versao anterior agrupava pela identidade RxNorm (RxCUI quando resolvido, nome quando
+    -- nao). Isso amarrava a chave do fato a um enriquecimento que muda entre execucoes: um
+    -- nome resolvido depois da carga passava a ter outra identidade, e as linhas ja gravadas
+    -- viravam orfas da dimensao. Ver o cabecalho de `dim_farmaco` para o incidente completo.
+    --
+    -- A consolidacao por principio ativo continua disponivel via `dim_farmaco.id_ingrediente`.
     select
         d.safetyreportid,
         d.nome_normalizado,
-        rx.rxcui,
-        {{ chave_identidade_farmaco('rx.rxcui', 'd.nome_normalizado') }} as chave_identidade,
-        d.caracterizacao_codigo,
-        d.produto_relatado,
-        d.substancia_ativa,
-        d.openfda_spl_set_id
-    from {{ ref('stg_faers_drugs') }} d
-    join relatos r on r.safetyreportid = d.safetyreportid
-    left join {{ ref('rxnorm_mapping') }} rx on rx.nome_normalizado = d.nome_normalizado
-    where d.nome_normalizado is not null
-
-),
-
-medicamentos as (
-
-    select
-        safetyreportid,
-        chave_identidade,
-        max(rxcui)                                          as rxcui,
-        min(nome_normalizado)                               as nome_normalizado,
         -- Menor codigo vence: se o medicamento foi suspeito (1) em alguma entrada do relato,
         -- o par e tratado como suspeito.
-        min(caracterizacao_codigo)                          as caracterizacao_codigo,
+        min(d.caracterizacao_codigo)                        as caracterizacao_codigo,
         count(*)                                            as qtd_entradas_medicamento,
-        min(produto_relatado)                               as produto_relatado,
-        min(substancia_ativa)                               as substancia_ativa,
-        min(openfda_spl_set_id)                             as openfda_spl_set_id
-    from medicamentos_resolvidos
-    group by safetyreportid, chave_identidade
+        min(d.produto_relatado)                             as produto_relatado,
+        min(d.substancia_ativa)                             as substancia_ativa,
+        min(d.openfda_spl_set_id)                           as openfda_spl_set_id
+    from {{ ref('stg_faers_drugs') }} d
+    join relatos r on r.safetyreportid = d.safetyreportid
+    where d.nome_normalizado is not null
+    group by d.safetyreportid, d.nome_normalizado
 
 ),
 
@@ -124,7 +111,6 @@ pares as (
     select
         rel.safetyreportid,
         m.nome_normalizado,
-        m.chave_identidade,
         re.reacao_normalizada,
 
         m.caracterizacao_codigo,
@@ -159,7 +145,7 @@ com_chaves as (
 
     select
         p.*,
-        {{ chave_hash(['p.chave_identidade']) }}            as id_farmaco,
+        {{ id_farmaco_de('p.nome_normalizado') }}           as id_farmaco,
         {{ chave_hash(['p.reacao_normalizada']) }}          as id_reacao
     from pares p
 
@@ -182,6 +168,11 @@ final as (
         -- dimensao degenerada: o identificador do relato vive no proprio fato
         c.safetyreportid,
         c.safetyreportversion,
+
+        -- Natural key do farmaco, guardada ao lado da chave substituta. Nao e redundancia:
+        -- e o que permite VERIFICAR que `id_farmaco` continua derivando apenas dela. Sem esta
+        -- coluna, a estabilidade da chave seria uma promessa sem teste possivel.
+        c.nome_normalizado,
 
         -- atributos do par
         c.caracterizacao_codigo                             as caracterizacao_codigo,

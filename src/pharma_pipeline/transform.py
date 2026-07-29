@@ -10,6 +10,7 @@ perfil so contem `env_var(...)`, portanto nenhum segredo e versionado.
 
 from __future__ import annotations
 
+import gc
 import logging
 import os
 from dataclasses import dataclass
@@ -73,10 +74,59 @@ def build_dbt_args(
         args += ["--select", select]
     if exclude:
         args += ["--exclude", exclude]
-    # `--full-refresh` so existe nos comandos que materializam modelos.
-    if full_refresh and args[0] in {"run", "build"}:
+    # `--full-refresh` so existe nos comandos que materializam algo.
+    #
+    # `seed` precisa estar nesta lista: quando as COLUNAS de um seed mudam, o dbt nao altera a
+    # tabela existente -- ele tenta carregar o CSV novo na tabela antiga e falha com um erro de
+    # dialeto CSV que nao menciona a causa real. Descartar a flag aqui deixava
+    # `transform seed --full-refresh` sem efeito nenhum, silenciosamente.
+    if full_refresh and args[0] in {"run", "build", "seed"}:
         args.append("--full-refresh")
     return args
+
+
+def liberar_conexao_duckdb() -> None:
+    """Fecha a conexao DuckDB que o dbt-duckdb mantem em cache no processo.
+
+    Por que isso e necessario
+    -------------------------
+    O `dbtRunner` roda no processo atual e o dbt-duckdb guarda o ambiente de conexao num
+    singleton. Terminado o `dbt build`, essa conexao continua ABERTA e em modo de ESCRITA.
+
+    O passo seguinte do pipeline, `publish`, abre o mesmo arquivo em modo somente leitura. O
+    DuckDB recusa duas conexoes com configuracoes diferentes para o mesmo arquivo:
+
+        Can't open a connection to same database file with a different configuration
+        than existing connections
+
+    Rodando pelo CLI o problema nao aparece, porque cada comando e um processo novo. Ele surge
+    quando transformacao e publicacao compartilham processo -- exatamente o que acontece em
+    `airflow dags test`. Foi assim que ele foi descoberto.
+
+    `close_all_connections()` do dbt-duckdb apenas descarta a referencia ao ambiente; nao fecha
+    o arquivo. Por isso fechamos o ambiente antes, quando ele existe.
+    """
+    try:
+        from dbt.adapters.duckdb.connections import DuckDBConnectionManager
+    except ImportError:  # pragma: no cover - dbt sempre presente no ambiente do projeto
+        return
+
+    # `_ENV` e interno, mas e o unico caminho para fechar sem CRIAR um ambiente novo:
+    # o acessor publico `env()` instancia um quando nao existe, que e o oposto do desejado.
+    ambiente = getattr(DuckDBConnectionManager, "_ENV", None)
+    if ambiente is not None:
+        try:
+            ambiente.close()
+        except Exception:  # noqa: BLE001 - falha ao fechar nao pode derrubar a transformacao
+            LOGGER.debug("Nao foi possivel fechar o ambiente DuckDB do dbt.", exc_info=True)
+
+    try:
+        DuckDBConnectionManager.close_all_connections()
+    except Exception:  # noqa: BLE001
+        LOGGER.debug("close_all_connections falhou.", exc_info=True)
+
+    # O DuckDB so libera o arquivo quando o objeto de conexao e finalizado.
+    gc.collect()
 
 
 def run_dbt(
@@ -107,7 +157,10 @@ def run_dbt(
     )
 
     LOGGER.info("Executando dbt: %s", " ".join(args))
-    result = dbtRunner().invoke(args)
+    try:
+        result = dbtRunner().invoke(args)
+    finally:
+        liberar_conexao_duckdb()
 
     if result.exception is not None:
         raise RuntimeError(f"dbt falhou ao iniciar: {result.exception}") from result.exception

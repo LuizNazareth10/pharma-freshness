@@ -185,32 +185,54 @@ data preenchida.
 
 ### `gold.dim_farmaco`
 
-**Grão:** uma identidade de fármaco.
+**Grão:** um nome de fármaco normalizado, como a fonte o reportou.
+Chave: `id_farmaco` = hash(`nome_normalizado`).
 
-A regra de identidade é a decisão central do modelo, definida na macro
-`chave_identidade_farmaco`:
+*Revisado na Fase 4 — a versão anterior usava o ingrediente RxNorm como identidade.*
 
 | Situação | Identidade |
 |---|---|
-| RxCUI resolvido | `rxcui:<código>` — nomes diferentes colapsam em uma linha |
-| Sem RxCUI, com nome | `nome:<nome normalizado>` — permanece, marcado |
+| Com nome | `nome:<nome normalizado>` |
 | Sem nome algum | `nao_informado` — o membro explícito |
 
 | Campo | Papel |
 |---|---|
-| `id_farmaco` | Chave substituta determinística |
-| `nome_farmaco` | Nome de exibição |
+| `id_farmaco` | Chave substituta **estável** — depende só do nome |
+| `nome_normalizado` | Natural key: o nome canônico reportado |
+| `nome_farmaco` | Nome de exibição (RxNorm quando existe) |
+| `rxcui` | Ingrediente RxNorm — **atributo**, não chave |
+| `id_ingrediente` | Chave de *rollup* por princípio ativo — **atributo** |
 | `mapeado_rxnorm` | Houve RxCUI? |
 | `identidade_confiavel` | Houve RxCUI **e** ele é de nível ingrediente |
-| `nomes_originais` | Nomes de origem que colapsaram nesta identidade |
-| `qtd_nomes_originais` | Quantos foram |
+
+#### Por que o RxCUI saiu da chave
+
+A identidade anterior era "o RxCUI quando resolvido, o nome quando não". Isso colapsava
+`TACROLIMUS` e `PROGRAF` numa linha só — elegante, e incorreto sob carga incremental.
+
+O RxCUI é **enriquecimento**, e enriquecimento melhora com o tempo: `RXNORM_MAX_LOOKUPS` limita
+quantos nomes novos são resolvidos por execução. Um fármaco entrava no fato como
+`nome:CORTISONE`; na execução seguinte, já resolvido, a dimensão reconstruída passava a
+chamá-lo `rxcui:3117`. Como o fato é incremental, as linhas antigas ficavam órfãs — 6.066 delas
+em 2026-07-29.
+
+> **A regra:** uma chave substituta só pode depender de dados que a linha de fato já carrega e
+> que não mudam. O nome reportado nunca muda; o RxCUI, sim.
+
+A conformação por princípio ativo não se perdeu — virou atributo, que pode ser reescrito no
+lugar sem invalidar chave nenhuma:
+
+```sql
+select d.rxnorm_nome, count(distinct f.safetyreportid)
+from gold.fato_evento_adverso f
+join gold.dim_farmaco d using (id_farmaco)
+where d.identidade_confiavel
+group by d.id_ingrediente, d.rxnorm_nome
+```
 
 > **Ao consultar:** para comparar volumes entre fármacos, filtre por `identidade_confiavel`.
 > Um RxCUI de apresentação (SCD/SBD/BN) identifica um produto, não o princípio ativo, e
 > misturá-los produz contagens incomparáveis.
-
-`nomes_originais` existe para tornar a normalização auditável: dá para explicar por que dois
-nomes viraram a mesma linha.
 
 ### `gold.dim_reacao`
 
@@ -298,7 +320,7 @@ desproporcionalidade (PRR, ROR).
 | Quantos eventos clínicos? | **A fonte não responde isso.** |
 
 `qtd_entradas_medicamento` registra quantas entradas originais do array foram consolidadas
-naquela identidade de fármaco dentro do relato.
+naquele nome de fármaco dentro do relato.
 
 Quando o mesmo medicamento aparece repetido com caracterizações diferentes, vence o **menor**
 código: se foi suspeito em alguma entrada, o par é tratado como suspeito.
@@ -344,6 +366,40 @@ de experiência**; são coisas distintas.
 
 ---
 
+### `gold.metricas_frescor`
+
+> **GRÃO: uma medição de frescor de uma fonte, num instante.**
+> Chave lógica: `(fonte, medicao_em)` → `id_medicao`.
+
+*Acrescentada na Fase 4.*
+
+| Grupo | Campos |
+|---|---|
+| Chaves | `id_medicao`, `id_fonte`, `fonte`, `medicao_em` |
+| Observado | `event_time_mais_recente`, `event_time_mais_antigo`, `ultimo_ingest_time`, `primeiro_ingest_time`, `registros` |
+| Os três relógios | `atraso_da_fonte_horas`, `atraso_do_pipeline_horas`, `idade_do_dado_horas` |
+| Limiares | `sla_ingestao_horas`, `sla_frescor_fonte_horas` |
+| Julgamento | `violou_sla_pipeline`, `violou_sla_fonte`, `situacao` |
+
+**Esta é a única tabela do projeto que é um LOG, e não um estado.** Todas as outras descrevem
+"como as coisas estão agora": republicá-las sem dado novo não muda nada e não gera snapshot.
+Aqui, cada execução acrescenta medições novas — porque *"nada mudou desde ontem"* também é
+informação de frescor, e é a série acumulada que revela tendência.
+
+Os três relógios respondem perguntas diferentes e não devem ser somados num número só:
+
+| Métrica | Pergunta | Quem controla |
+|---|---|---|
+| `atraso_da_fonte_horas` | Que idade tinha o dado quando o capturamos? | A origem |
+| `atraso_do_pipeline_horas` | Há quanto tempo não capturamos? | **Nós** |
+| `idade_do_dado_horas` | Que idade tem o dado que entregamos agora? | Soma dos dois |
+
+A tabela lê os modelos `stg_*`, e não `fato_evento_adverso`: aquele fato contém apenas FAERS, e
+agrupá-lo por `fonte` devolveria uma linha só, escondendo DailyMed e RES justamente na tabela
+que existe para vigiá-los.
+
+---
+
 ## Chaves substitutas
 
 Todas usam `md5` sobre as colunas do grão, com separador `|` e marcação explícita de nulo,
@@ -369,10 +425,11 @@ Duas propriedades importam:
 | `silver.stg_res` | `recall_number` | um recall |
 | `silver.farmaco_nomes` | `nome_normalizado` | um nome distinto |
 | `silver.rxnorm_mapping` | `nome_normalizado` | um nome distinto |
-| `gold.dim_farmaco` | `id_farmaco` | uma identidade de fármaco |
+| `gold.dim_farmaco` | `id_farmaco` | um nome de fármaco reportado |
 | `gold.dim_reacao` | `id_reacao` | um termo MedDRA |
 | `gold.dim_data` | `id_data` | um dia |
 | `gold.dim_fonte` | `id_fonte` | uma fonte |
 | `gold.dim_bula` | `id_bula` | uma bula |
 | `gold.fato_evento_adverso` | `id_evento` | um par fármaco–reação num relato |
 | `gold.fato_recall` | `id_recall` | uma ação de recolhimento |
+| `gold.metricas_frescor` | `id_medicao` | uma medição de frescor de uma fonte |

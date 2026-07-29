@@ -118,6 +118,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Tabela a validar; repetivel. Omita para validar os fatos da gold.",
     )
 
+    # ---- Fase 4: orquestracao e observabilidade -----------------------------------------
+    freshness = sub.add_parser(
+        "freshness",
+        help="Avalia o staleness gap por fonte contra os SLOs declarados.",
+    )
+    freshness.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+        help=(
+            "Encerra com codigo 1 se o SLO do PIPELINE for violado. O atraso da FONTE nunca "
+            "falha: nao esta sob nosso controle e um alerta que vive vermelho e ignorado."
+        ),
+    )
+    freshness.add_argument(
+        "--formato",
+        choices=["json", "texto"],
+        default="json",
+        help="`texto` produz um resumo legivel, util no log de uma tarefa do Airflow.",
+    )
+
+    sub.add_parser(
+        "compact",
+        help=(
+            "Compacta o banco DuckDB. O arquivo cresce a cada --full-refresh e nunca "
+            "devolve espaco ao disco sozinho."
+        ),
+    )
+
     # ---- inspecao do lakehouse -----------------------------------------------------------
     snapshots = sub.add_parser("snapshots", help="Lista o historico de snapshots Iceberg.")
     snapshots.add_argument("table", help="Fonte bronze (`faers`) ou tabela (`gold.dim_farmaco`).")
@@ -216,6 +244,22 @@ def _cmd_expectations(settings: Settings, args) -> None:
         raise SystemExit(1)
 
 
+def _cmd_freshness(settings: Settings, args) -> None:
+    from pharma_pipeline.freshness import avaliar_frescor
+
+    relatorio = avaliar_frescor(settings)
+
+    if args.formato == "texto":
+        print(relatorio.resumo())
+    else:
+        _print({"stage": "freshness", **relatorio.to_dict()})
+
+    # O atraso da fonte e reportado, mas nao derruba a execucao: veja a docstring de
+    # `pharma_pipeline.freshness` para o porque dessa assimetria.
+    if args.fail_on_breach and not relatorio.saudavel:
+        raise SystemExit(1)
+
+
 def _cmd_verify_idempotency(settings: Settings, args) -> None:
     before = list_snapshots(settings, args.source)
     count_before = row_count(settings, args.source)
@@ -285,6 +329,21 @@ def main() -> None:
         _cmd_publish(settings, args)
     elif args.command == "expectations":
         _cmd_expectations(settings, args)
+    elif args.command == "freshness":
+        _cmd_freshness(settings, args)
+    elif args.command == "compact":
+        from pharma_pipeline.maintenance import compactar_duckdb
+
+        resultado = compactar_duckdb(settings)
+        _print(
+            {
+                "stage": "compact",
+                "path": resultado.caminho,
+                "mb_antes": round(resultado.bytes_antes / 1048576, 1),
+                "mb_depois": round(resultado.bytes_depois / 1048576, 1),
+                "reducao_percentual": resultado.reducao_percentual,
+            }
+        )
     elif args.command == "snapshots":
         _print(list_snapshots(settings, args.table))
     elif args.command == "tables":

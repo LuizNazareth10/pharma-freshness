@@ -551,6 +551,22 @@ models:
 
 **Objetivo**: o pipeline roda sozinho, se recupera de falhas e reporta o que aconteceu.
 
+> **Status da implementação:** concluída e validada localmente. O tutorial executável está em
+> [`docs/fase-4.md`](fase-4.md).
+>
+> Quatro pontos deste roteiro foram ajustados diante do que o ambiente real exigiu; cada um está
+> justificado no documento acima:
+> 1. **Airflow 3, não 2.** `schedule_interval` foi substituído por `schedule`, e o `webserver`
+>    pelo `api-server` mais um `dag-processor` próprio. O Airflow vive num profile do compose,
+>    para que as Fases 1–3 continuem subindo só o MinIO.
+> 2. **As ingestões correm em paralelo.** DailyMed e FAERS atingem APIs diferentes e gravam
+>    tabelas diferentes; encadeá-las em série só alongaria a janela de execução.
+> 3. **O staleness gap virou três métricas, não uma.** Um número só mistura o atraso da fonte
+>    (que não controlamos) com o do pipeline (que controlamos) — e é justamente essa distinção
+>    que decide se alguém precisa investigar código ou apenas avisar quem consome.
+> 4. **`metricas_frescor` lê a silver, não a fato.** `fato_evento_adverso` contém apenas FAERS;
+>    agrupá-la por `fonte` devolveria uma única linha e esconderia as outras duas fontes.
+
 #### Dia 9 — Primeiro DAG no Airflow
 
 **O que fazer**:

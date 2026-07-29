@@ -3,20 +3,38 @@ version: 2
 models:
   - name: dim_farmaco
     description: >
-      Dimensao conformada de farmaco, normalizada por RxNorm.
-      Grao: uma identidade de farmaco -- o RxCUI quando resolvido, o nome normalizado quando
-      nao. Farmacos nao mapeados permanecem na dimensao, marcados por `mapeado_rxnorm = false`.
+      Dimensao conformada de farmaco.
+
+      Grao: um nome de farmaco normalizado, como a fonte o reportou.
+
+      A chave deriva SO do nome, que nunca muda. O RxCUI e enriquecimento e melhora a cada
+      execucao; embuti-lo na chave fazia linhas de fato ja gravadas apontarem para identidades
+      que a reconstrucao da dimensao apagava (6.066 orfas em 2026-07-29).
+
+      A conformacao por principio ativo virou atributo: agrupe por `id_ingrediente` ou `rxcui`.
+      Farmacos que o RxNorm nao conhece permanecem aqui, marcados por `mapeado_rxnorm = false`.
     columns:
       - name: id_farmaco
-        description: Chave substituta deterministica da identidade do farmaco.
+        description: >
+          Chave substituta ESTAVEL, derivada apenas de `nome_normalizado`. Nao depende de
+          nenhum dado que possa mudar entre execucoes.
         data_tests: [not_null, unique]
+      - name: nome_normalizado
+        description: Nome canonico reportado pela fonte; natural key desta dimensao.
+        data_tests: [unique]
       - name: nome_farmaco
         description: Nome de exibicao; o nome RxNorm quando existe, senao o nome de origem.
         data_tests: [not_null]
       - name: rxcui
-        description: Identificador RxNorm do ingrediente; nulo quando nao mapeado.
+        description: Identificador RxNorm do ingrediente; nulo quando nao mapeado. Atributo.
+      - name: id_ingrediente
+        description: >
+          Chave de ROLLUP por principio ativo: nomes diferentes que resolvem para o mesmo
+          ingrediente compartilham este valor. Nao e chave estrangeira de nenhum fato --
+          justamente porque pode mudar quando o RxNorm aprende algo novo.
+        data_tests: [not_null]
       - name: mapeado_rxnorm
-        description: Indica se o RxNorm resolveu algum RxCUI para esta identidade.
+        description: Indica se o RxNorm resolveu algum RxCUI para este nome.
         data_tests: [not_null]
       - name: identidade_confiavel
         description: >
@@ -71,6 +89,17 @@ models:
               arguments: {values: ["dailymed", "faers", "res"]}
       - name: cadencia_esperada
         description: Cadencia declarada da fonte; base do alerta de frescor da Fase 4.
+        data_tests: [not_null]
+      - name: sla_ingestao_horas
+        description: >
+          Limiar do SLO que NOS controlamos: horas toleradas sem uma ingestao bem-sucedida.
+          Violar isso significa que o pipeline falhou ou parou.
+        data_tests: [not_null]
+      - name: sla_frescor_fonte_horas
+        description: >
+          Limiar do SLO da ORIGEM: horas toleradas entre o evento mais recente publicado pela
+          fonte e o momento em que o capturamos. Violar isso significa que a fonte esta lenta,
+          nao que o pipeline quebrou.
         data_tests: [not_null]
 
   - name: dim_bula
@@ -234,11 +263,77 @@ models:
           - accepted_values:
               arguments: {values: ["res"]}
 
+  - name: metricas_frescor
+    description: >
+      Serie temporal de medicoes de frescor, uma linha por (fonte, instante da medicao).
+      Diferente das demais tabelas da gold, esta e um LOG: cada execucao acrescenta medicoes
+      novas, porque "nada mudou desde ontem" tambem e informacao de frescor.
+
+      Separa tres relogios de proposito: `atraso_da_fonte_horas` mede a origem (nao
+      controlamos), `atraso_do_pipeline_horas` mede a nossa execucao (controlamos) e
+      `idade_do_dado_horas` mede o que o consumidor sente. Somar tudo em um numero so esconde
+      qual dos dois lados falhou.
+    columns:
+      - name: id_medicao
+        description: Chave substituta de (fonte, medicao_em).
+        data_tests: [not_null, unique]
+      - name: medicao_em
+        description: Instante da medicao; igual para todas as fontes de uma mesma execucao.
+        data_tests: [not_null]
+      - name: fonte
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments: {values: ["dailymed", "faers", "res"]}
+      - name: id_fonte
+        description: Chave estrangeira para `dim_fonte`.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_fonte'), field: id_fonte}
+      - name: event_time_mais_recente
+        description: Evento mais novo que possuimos para esta fonte.
+        data_tests: [not_null]
+      - name: ultimo_ingest_time
+        description: Instante da captura mais recente desta fonte.
+        data_tests: [not_null]
+      - name: atraso_da_fonte_horas
+        description: >
+          Idade do dado mais novo NO MOMENTO da captura. Mede a origem: nenhuma mudanca no
+          nosso codigo reduz este numero.
+        data_tests: [not_null]
+      - name: atraso_do_pipeline_horas
+        description: >
+          Horas entre a ultima captura e a medicao. Mede a nossa execucao: se cresce, o
+          pipeline parou de rodar.
+        data_tests: [not_null]
+      - name: idade_do_dado_horas
+        description: >
+          Horas entre o evento mais recente e a medicao. E a soma dos dois atrasos e a unica
+          metrica que descreve o que o consumidor final recebe.
+        data_tests: [not_null]
+      - name: situacao
+        description: Classificacao derivada, priorizando a falha que e nossa.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                  values: ["ok", "pipeline_atrasado", "fonte_atrasada"]
+      - name: violou_sla_pipeline
+        data_tests: [not_null]
+      - name: violou_sla_fonte
+        data_tests: [not_null]
+
 seeds:
   - name: fonte_referencia
     description: >
-      Atributos declarados de cada fonte do pipeline: mantenedor, cadencia esperada e URL.
-      Sao conhecimento do projeto, nao dado observado -- por isso vivem sob revisao de codigo.
+      Atributos declarados de cada fonte do pipeline: mantenedor, cadencia esperada, URL e os
+      limiares de SLO. Sao conhecimento do projeto, nao dado observado -- por isso vivem sob
+      revisao de codigo, e mudar um limiar exige um commit.
     columns:
       - name: fonte
         data_tests: [not_null, unique]
+      - name: sla_ingestao_horas
+        data_tests: [not_null]
+      - name: sla_frescor_fonte_horas
+        data_tests: [not_null]

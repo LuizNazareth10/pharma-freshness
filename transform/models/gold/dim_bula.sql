@@ -35,11 +35,13 @@ com_farmaco as (
     -- Bulas cujo nome de produto nao foi resolvido ficam com `id_farmaco` nulo em vez de
     -- apontar para o membro "nao informado": aqui a ausencia de ligacao e informacao util
     -- (o parsing do titulo falhou), e nao uma categoria de negocio.
+    -- O join com `rxnorm_mapping` permanece, mas agora so para CONFIRMAR que o nome extraido do
+    -- titulo e um nome conhecido da dimensao. A chave em si vem do nome, nao do RxCUI.
     select
         c.*,
         case
             when m.nome_normalizado is null then null
-            else {{ id_farmaco_de('m.rxcui', 'm.nome_normalizado') }}
+            else {{ id_farmaco_de('m.nome_normalizado') }}
         end as id_farmaco
     from com_nome c
     left join {{ ref('rxnorm_mapping') }} m on m.nome_normalizado = c.nome_normalizado

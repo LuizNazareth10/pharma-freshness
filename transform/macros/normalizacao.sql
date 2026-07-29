@@ -53,15 +53,54 @@
 {%- endmacro %}
 
 
-{% macro chave_identidade_farmaco(rxcui, nome) -%}
+{% macro chave_identidade_farmaco(nome) -%}
     {#
-      Forma textual da identidade de um farmaco: o RxCUI quando resolvido, o nome normalizado
-      quando nao. Quando nem nome existe, cai no membro "nao informado".
+      Identidade textual de um farmaco: o NOME normalizado como a fonte o reportou.
 
-      Esta macro e a UNICA definicao dessa regra. Ela nasceu de um bug real: a expressao estava
-      repetida em quatro modelos, e o fato agrupava por NOME enquanto a dimensao agrupava por
-      RxCUI. Dois nomes que resolvem para o mesmo ingrediente ("TACROLIMUS" e "TACROLIMUS
-      ANHYDROUS") viravam uma linha na dimensao e duas no fato, quebrando o grao declarado.
+      Por que o RxCUI NAO entra nesta chave
+      -------------------------------------
+      A versao anterior desta macro usava o RxCUI quando ele existia e caia no nome quando nao.
+      Parecia melhor -- unificava "TACROLIMUS" e "PROGRAF" numa linha so -- mas quebrou em
+      producao, e a causa vale registrar.
+
+      O RxCUI e ENRIQUECIMENTO, e enriquecimento melhora com o tempo: o cache do RxNorm cresce a
+      cada execucao, e `RXNORM_MAX_LOOKUPS` garante que nomes novos fiquem sem resolver na
+      primeira passagem. Um farmaco entrava no fato como `nome:CORTISONE`, o RxNorm o resolvia na
+      execucao seguinte, e a dimensao -- reconstruida por inteiro -- passava a chama-lo
+      `rxcui:3117`. As linhas de fato ja gravadas continuavam apontando para uma identidade que
+      nao existia mais.
+
+      Resultado observado em 2026-07-29: 6.066 linhas de fato orfas, e o teste de integridade
+      referencial reprovando com razao.
+
+      A regra que evita isso e geral: a chave substituta so pode depender de dados que a propria
+      linha de fato ja carrega e que nao mudam. O nome reportado nunca muda; o RxCUI, sim.
+
+      A conformacao por ingrediente nao se perde -- ela virou ATRIBUTO da dimensao
+      (`id_ingrediente`, `rxcui`), que pode ser reescrito no lugar sem invalidar chave nenhuma.
+      Contar por principio ativo passa a ser `group by id_ingrediente` em vez de depender de a
+      chave ja vir colapsada.
+    #}
+    coalesce(
+        '{{ prefixo_nome() }}' || {{ nome }},
+        '{{ chave_farmaco_nao_informado() }}'
+    )
+{%- endmacro %}
+
+
+{% macro id_farmaco_de(nome) -%}
+    {# Chave substituta ESTAVEL do farmaco: depende so do nome reportado. #}
+    {{ chave_hash([chave_identidade_farmaco(nome)]) }}
+{%- endmacro %}
+
+
+{% macro chave_identidade_ingrediente(rxcui, nome) -%}
+    {#
+      Identidade do INGREDIENTE, para rollup: o RxCUI quando resolvido, o nome quando nao.
+
+      Esta e a antiga regra de identidade, agora no lugar certo. Ela vive como atributo da
+      dimensao, e nao como chave de juncao, justamente porque pode mudar quando o RxNorm
+      aprende algo novo sobre um nome.
     #}
     coalesce(
         '{{ prefixo_rxcui() }}' || {{ rxcui }},
@@ -71,9 +110,9 @@
 {%- endmacro %}
 
 
-{% macro id_farmaco_de(rxcui, nome) -%}
-    {# Chave substituta do farmaco, derivada da identidade textual acima. #}
-    {{ chave_hash([chave_identidade_farmaco(rxcui, nome)]) }}
+{% macro id_ingrediente_de(rxcui, nome) -%}
+    {# Chave de agrupamento por principio ativo. NAO e chave estrangeira de fato. #}
+    {{ chave_hash([chave_identidade_ingrediente(rxcui, nome)]) }}
 {%- endmacro %}
 
 

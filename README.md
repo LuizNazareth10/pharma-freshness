@@ -7,7 +7,9 @@ farmacovigilância. A implementação cobre:
 - **Fase 2 — Ingestão batch (Dias 3–5):** dlt, Parquet bronze, Iceberg, snapshots, time travel,
   watermarks e idempotência para DailyMed, FAERS e RES;
 - **Fase 3 — Modelagem (Dias 6–8):** dbt sobre DuckDB, camada silver, normalização RxNorm,
-  modelo dimensional na gold e duas barreiras de qualidade.
+  modelo dimensional na gold e duas barreiras de qualidade;
+- **Fase 4 — Orquestração (Dias 9–10):** Airflow em container, DAGs diária e semanal, e a
+  medição do *staleness gap* por fonte com SLOs declarados.
 
 ## Arquitetura
 
@@ -30,10 +32,14 @@ farmacovigilância. A implementação cobre:
             │
             ▼
    Great Expectations — contrato das tabelas publicadas
+            │
+            ▼
+   gold.metricas_frescor — staleness gap medido por fonte
 ```
 
 O DuckDB é o **motor** (efêmero, reconstruível). O Iceberg é o **armazenamento de estado**
-(transacional, versionado, com time travel).
+(transacional, versionado, com time travel). O **Airflow** agenda tudo isso e falha quando o
+atraso é nosso.
 
 ## Início rápido
 
@@ -73,6 +79,22 @@ Ou o laboratório completo, que ao final **prova a idempotência**:
 .\scripts\day8\Run-Phase3-Lab.ps1
 ```
 
+### Fase 4 — deixar o pipeline rodar sozinho e medir o frescor
+
+```powershell
+.\scripts\day9\Start-Airflow.ps1          # sobe Postgres + Airflow (profile orquestracao)
+.\scripts\day9\Test-Dag.ps1 -Dag diario   # roda a DAG inteira sem esperar o agendamento
+.\scripts\day10\Show-Frescor.ps1          # staleness gap por fonte
+```
+
+Console do Airflow em <http://localhost:8081> (credenciais no `.env`). As DAGs começam
+**pausadas** — subir o orquestrador não deve disparar ingestão sem que alguém decida isso.
+
+```powershell
+pharma-pipeline freshness --formato texto     # relatório legível
+pharma-pipeline freshness --fail-on-breach    # sai 1 só se o atraso for NOSSO
+```
+
 ### Consultar
 
 ```powershell
@@ -97,6 +119,7 @@ Os objetos podem ser vistos no console do MinIO em <http://localhost:9001>:
 | [Fase 1 — tutorial](docs/dia-1-2.md) | MinIO, Docker e exploração das APIs |
 | [Fase 2 — tutorial](docs/fase-2.md) | Ingestão, Iceberg, watermarks, idempotência |
 | [Fase 3 — tutorial](docs/fase-3.md) | dbt, silver, RxNorm, modelo dimensional, testes |
+| [Fase 4 — tutorial](docs/fase-4.md) | Airflow, DAGs, retry, catchup e medição do frescor |
 | [Contratos — Fase 2](docs/contratos-dados-fase-2.md) | Grão e chaves da bronze |
 | [Contratos — Fase 3](docs/contratos-dados-fase-3.md) | Grão e chaves da silver e da gold |
 | [Decisões — Fase 2](docs/decisoes-arquitetura-fase-2.md) | Trade-offs da ingestão |
@@ -107,9 +130,11 @@ Os objetos podem ser vistos no console do MinIO em <http://localhost:9001>:
 ## Estrutura
 
 ```
-src/pharma_pipeline/     ingestão, Iceberg, RxNorm, publicação, qualidade, CLI
+src/pharma_pipeline/     ingestão, Iceberg, RxNorm, publicação, qualidade, frescor, CLI
 transform/               projeto dbt (modelos, macros, seeds, testes)
-scripts/day1..day8/      roteiros PowerShell por dia de aprendizado
+dags/                    DAGs do Airflow e as funções que elas chamam
+docker/airflow/          imagem do Airflow com o pipeline instalado
+scripts/day1..day10/     roteiros PowerShell por dia de aprendizado
 tests/                   testes unitários Python
 docs/                    tutoriais, contratos e decisões
 ```
@@ -118,9 +143,17 @@ docs/                    tutoriais, contratos e decisões
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\python.exe -m ruff check src tests
-.\.venv\Scripts\python.exe -m ruff format --check src tests
+.\.venv\Scripts\python.exe -m ruff check src tests dags
+.\.venv\Scripts\python.exe -m ruff format --check src tests dags
 .\.venv\Scripts\pharma-pipeline.exe transform test
+```
+
+Os testes das DAGs exigem o Airflow e são pulados fora da imagem de orquestração. Para
+executá-los:
+
+```powershell
+docker compose --profile orquestracao run --rm airflow-scheduler `
+    python -m pytest /opt/pharma/tests/test_dags.py
 ```
 
 > O projeto é educacional e os dados públicos não provam causalidade clínica. Um relato do FAERS

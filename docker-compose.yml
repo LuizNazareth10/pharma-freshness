@@ -1,5 +1,67 @@
 name: pharma-freshness
 
+# Configuração comum aos serviços do Airflow (Fase 4).
+#
+# Todos rodam a MESMA imagem e o mesmo ambiente; muda apenas o comando. Isso é o que garante
+# que o que o scheduler enxerga é idêntico ao que o worker executa.
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: docker/airflow/Dockerfile
+  image: pharma-freshness/airflow:local
+  profiles: [orquestracao]
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+    # Segredos de laboratório: fixos para que scheduler, api-server e dag-processor
+    # compartilhem a mesma chave sem um passo extra de geração.
+    AIRFLOW__API_AUTH__JWT_SECRET: pharma-local-jwt-change-me
+    AIRFLOW__CORE__FERNET_KEY: ""
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+    # O scheduler só expõe /health se isso for ligado explicitamente. Sem a variável, a porta
+    # 8974 não escuta e o health check do compose marca o serviço como unhealthy mesmo com o
+    # scheduler funcionando normalmente.
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+
+    # --- ambiente do pipeline -------------------------------------------------------------
+    # Dentro da rede do compose o MinIO atende pelo nome do serviço, não por localhost.
+    # `load_dotenv` não sobrescreve variáveis já definidas, então este valor vence o do .env.
+    MINIO_ENDPOINT: http://minio:9000
+    MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+    MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    MINIO_BUCKET: ${MINIO_BUCKET:-farmacovigilancia}
+    OPENFDA_API_KEY: ${OPENFDA_API_KEY:-}
+    RXNORM_OFFLINE: ${RXNORM_OFFLINE:-0}
+    RXNORM_MAX_LOOKUPS: ${RXNORM_MAX_LOOKUPS:-500}
+    PYTHONPATH: /opt/airflow/dags
+  volumes:
+    # Código e projeto dbt montados: editar no host reflete no container sem rebuild, porque o
+    # pacote foi instalado com `pip install -e`.
+    - ./dags:/opt/airflow/dags
+    - ./src:/opt/pharma/src
+    - ./transform:/opt/pharma/transform
+    # Os testes de integridade das DAGs exigem o Airflow instalado, que só existe nesta
+    # imagem. Montá-los permite rodá-los aqui sem copiá-los para dentro do build.
+    - ./tests:/opt/pharma/tests:ro
+    - ./pyproject.toml:/opt/pharma/pyproject.toml:ro
+    - ./.env:/opt/pharma/.env:ro
+    # Estado compartilhado com o host: catálogo Iceberg (SQLite), banco DuckDB, cache do
+    # RxNorm e estado do dlt. É o que permite rodar a DAG e depois inspecionar pelo CLI do
+    # host. O preço é não poder escrever dos dois lugares ao mesmo tempo -- veja docs/fase-4.md.
+    - ./.local:/opt/pharma/.local
+    - airflow-logs:/opt/airflow/logs
+  user: "50000:0"
+  depends_on:
+    airflow-db:
+      condition: service_healthy
+    minio:
+      condition: service_healthy
+  networks:
+    - lakehouse
+
 x-minio-client-common: &minio-client-common
   image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
   profiles: [automation]
@@ -60,9 +122,117 @@ services:
         mc stat "local/$${MINIO_BUCKET}/laboratorio/arquivo-teste.json"
         mc ls --recursive "local/$${MINIO_BUCKET}"
 
+  # ==========================================================================================
+  # Fase 4 — Orquestração. Sobe com:  docker compose --profile orquestracao up -d
+  #
+  # Ficam num profile de propósito: as Fases 1–3 não precisam do Airflow, e um
+  # `docker compose up -d` continua subindo só o MinIO, leve e rápido.
+  # ==========================================================================================
+
+  # Banco de metadados do Airflow. Guarda estado de DAGs, execuções e XCom -- nunca dado do
+  # pipeline, que vive no Iceberg/MinIO.
+  airflow-db:
+    image: postgres:16.4-alpine
+    profiles: [orquestracao]
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - lakehouse
+
+  # Migra o banco e cria o usuário administrador. Roda até o fim e encerra; os demais serviços
+  # esperam a conclusão com sucesso.
+  airflow-init:
+    <<: *airflow-common
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        airflow db migrate
+        airflow users create \
+          --username "$${AIRFLOW_ADMIN_USER}" --password "$${AIRFLOW_ADMIN_PASSWORD}" \
+          --firstname Pharma --lastname Local --role Admin --email admin@example.com \
+          || echo "Usuario ja existe; seguindo."
+        echo "Airflow inicializado."
+    environment:
+      <<: *airflow-common-env
+      AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:-admin}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+    restart: on-failure
+
+  # Interface web e API. No Airflow 3 o antigo `webserver` foi substituído pelo `api-server`,
+  # que também atende a API de execução usada pelas tarefas.
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "${AIRFLOW_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Agenda e despacha as tarefas.
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Processa os arquivos de DAG. No Airflow 3 esta função saiu do scheduler e virou um
+  # componente próprio: um arquivo de DAG defeituoso deixa de travar o agendamento.
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-db:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   minio-data:
     name: pharma-freshness-minio-data
+  airflow-db-data:
+    name: pharma-freshness-airflow-db
+  airflow-logs:
+    name: pharma-freshness-airflow-logs
 
 networks:
   lakehouse:

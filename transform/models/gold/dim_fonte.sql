@@ -41,6 +41,13 @@ final as (
         r.cadencia_esperada,
         r.url_api,
         r.descricao,
+
+        -- Limiares de SLO declarados no seed. Ficam na dimensao para que qualquer consulta
+        -- consiga comparar o observado com o prometido sem reabrir o CSV.
+        r.sla_ingestao_horas,
+        r.sla_frescor_fonte_horas,
+        r.frescor_fonte_observacao,
+
         o.ultimo_ingest_time,
         coalesce(o.registros_bronze, 0)                 as registros_observados
     from referencia r

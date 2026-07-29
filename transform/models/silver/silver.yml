@@ -85,12 +85,29 @@ models:
         description: Posicao do medicamento no array `patient.drug`, comecando em 1.
         data_tests: [not_null]
       - name: caracterizacao_codigo
-        description: "Codigo da FDA: 1 suspeito, 2 concomitante, 3 interagente."
+        description: >
+          Codigo da FDA conforme o padrao ICH E2B: 1 suspeito, 2 concomitante, 3 interagente.
+          O valor bruto e preservado como veio, inclusive quando esta fora do dominio: a bronze
+          e a silver nao devem apagar o que a fonte enviou. Quem traduz o codigo em rotulo e a
+          coluna `caracterizacao`, que devolve NULL para qualquer codigo desconhecido em vez de
+          inventar um significado.
         data_tests:
+          # Avisa a partir de UMA ocorrencia, mas so falha se o desconhecido virar sistemico.
+          #
+          # Motivo: em 2026-07-29 apareceu um unico registro com codigo 4 em 38.639 linhas
+          # (relato 26558175, HUMULIN R U-500 KWIKPEN). O padrao E2B nao define o valor 4, entao
+          # e erro de preenchimento na origem. Derrubar a ingestao diaria inteira por causa de
+          # uma linha seria desproporcional; ignorar em silencio esconderia uma eventual
+          # mudanca de dominio da fonte. O limiar separa os dois casos: dezenas de ocorrencias
+          # indicam que a FDA passou a usar um codigo novo -- e ai alguem precisa olhar.
           - accepted_values:
               arguments:
                   values: [1, 2, 3]
                   quote: false
+              config:
+                severity: error
+                warn_if: ">0"
+                error_if: ">100"
       - name: nome_normalizado
         description: >
           Nome canonico levado ao RxNorm. Pode ser nulo quando o registro nao traz nome de

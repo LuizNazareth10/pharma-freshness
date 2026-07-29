@@ -17,6 +17,11 @@ from pharma_pipeline.contracts import LakeTable, contract_for, lake_table
 # Colunas tecnicas que mudam a cada extracao e, por isso, nao indicam mudanca real do dado.
 _VOLATILE_BRONZE_COLUMNS = ("ingest_time", "extraction_id")
 
+# Maximo de linhas por chamada de `upsert`. O PyIceberg monta uma expressao booleana com uma
+# comparacao por linha para localizar o que sera substituido; sem limite, dezenas de milhares
+# de linhas produzem uma arvore profunda demais e o processo morre por estouro de pilha.
+_LOTE_UPSERT = 2_000
+
 
 @dataclass(frozen=True, slots=True)
 class UpsertResult:
@@ -200,6 +205,94 @@ def _changed_rows(
     return pa.Table.from_pylist(changed, schema=incoming.schema)
 
 
+def _chaves(data: pa.Table, join_cols: tuple[str, ...]) -> set[tuple[Any, ...]]:
+    """Conjunto das chaves presentes em uma tabela."""
+    colunas = [data.column(nome).to_pylist() for nome in join_cols]
+    return set(zip(*colunas, strict=True))
+
+
+def _separar_novos_de_alterados(
+    candidates: pa.Table,
+    chaves_existentes: set[tuple[Any, ...]],
+    join_cols: tuple[str, ...],
+) -> tuple[pa.Table, pa.Table]:
+    """Divide as linhas a gravar entre INSERCAO pura e ATUALIZACAO de chave existente.
+
+    Por que a divisao existe
+    ------------------------
+    O `upsert` do PyIceberg precisa localizar as linhas que serao substituidas, e para isso
+    constroi uma expressao booleana com uma comparacao POR LINHA da entrada. Com dezenas de
+    milhares de linhas, essa arvore fica profunda demais e o interpretador estoura a pilha --
+    o processo morre com STATUS_STACK_OVERFLOW (0xC00000FD), sem excecao e sem mensagem.
+
+    Foi exatamente o que aconteceu ao publicar `silver.stg_faers_drugs` com 38.639 linhas.
+
+    Linhas cuja chave ainda nao existe na tabela nao precisam localizar nada: um `append`
+    resolve, sem expressao nenhuma. Como o caso normal de um pipeline em crescimento e
+    "chegaram linhas novas", essa separacao elimina o problema na maior parte das execucoes --
+    e ainda e mais rapida, porque `append` nao reescreve arquivo existente.
+
+    O que sobra (chaves que realmente mudaram) segue pelo `upsert`, em lotes.
+    """
+    if not chaves_existentes:
+        return candidates, candidates.slice(0, 0)
+
+    colunas = [candidates.column(nome).to_pylist() for nome in join_cols]
+    indices_novos: list[int] = []
+    indices_alterados: list[int] = []
+    for posicao, chave in enumerate(zip(*colunas, strict=True)):
+        destino = indices_alterados if chave in chaves_existentes else indices_novos
+        destino.append(posicao)
+
+    # O tipo do indice precisa ser explicito: uma lista vazia viraria um array de tipo `null`,
+    # que o `take` do Arrow nao aceita.
+    def selecionar(indices: list[int]) -> pa.Table:
+        return candidates.take(pa.array(indices, type=pa.int64()))
+
+    return selecionar(indices_novos), selecionar(indices_alterados)
+
+
+def _em_lotes(data: pa.Table, tamanho: int):
+    """Fatia uma tabela em lotes, mantendo a profundidade da expressao do upsert sob controle."""
+    for inicio in range(0, data.num_rows, tamanho):
+        yield data.slice(inicio, tamanho)
+
+
+class SchemaIncompativel(RuntimeError):
+    """O modelo mudou de colunas e a tabela Iceberg publicada ficou para tras."""
+
+
+def _exigir_schema_compativel(table: Any, incoming: pa.Table, identifier: str) -> None:
+    """Falha cedo, e com instrucao, quando o modelo ganhou ou perdeu colunas.
+
+    Sem esta checagem o erro so aparece la dentro do PyIceberg, como
+    `ValueError: Could not find column: 'x'` -- uma mensagem que nao diz qual tabela, qual
+    modelo nem o que fazer. Trocar um schema publicado exige uma decisao consciente, entao
+    exigimos `--recreate` em vez de evoluir o schema por conta propria.
+    """
+    publicadas = {field.name for field in table.schema().fields}
+    recebidas = set(incoming.column_names)
+
+    novas = sorted(recebidas - publicadas)
+    removidas = sorted(publicadas - recebidas)
+    if not novas and not removidas:
+        return
+
+    detalhes = []
+    if novas:
+        detalhes.append(f"colunas novas no modelo: {', '.join(novas)}")
+    if removidas:
+        detalhes.append(f"colunas que sumiram do modelo: {', '.join(removidas)}")
+
+    raise SchemaIncompativel(
+        f"{identifier}: o schema do modelo nao bate com o da tabela Iceberg publicada "
+        f"({'; '.join(detalhes)}). "
+        f"Republique com `pharma-pipeline publish {identifier} --recreate` para descartar e "
+        "recriar a tabela. Isso APAGA o historico de snapshots dela, portanto e uma decisao "
+        "explicita, e nao um efeito colateral da publicacao."
+    )
+
+
 def upsert_arrow(
     settings: Settings,
     identifier: str,
@@ -242,27 +335,40 @@ def upsert_arrow(
         )
         created = True
 
+    if not created:
+        _exigir_schema_compativel(table, incoming, identifier)
+
     before = table.current_snapshot().snapshot_id if table.current_snapshot() else None
     compare_cols = _compare_columns(incoming, join_cols)
     candidates = incoming
+    chaves_existentes: set[tuple[Any, ...]] = set()
     if before is not None:
         current = table.scan(selected_fields=join_cols + compare_cols).to_arrow()
         candidates = _changed_rows(incoming, current, join_cols, compare_cols)
+        chaves_existentes = _chaves(current, join_cols)
 
     rows_inserted = 0
     rows_updated = 0
     if candidates.num_rows:
-        result = table.upsert(
-            candidates,
-            join_cols=list(join_cols),
-            snapshot_properties={
-                "pipeline": "pharma-freshness",
-                "committed-at-utc": datetime.now(UTC).isoformat(),
-                **(snapshot_properties or {}),
-            },
-        )
-        rows_inserted = result.rows_inserted
-        rows_updated = result.rows_updated
+        propriedades = {
+            "pipeline": "pharma-freshness",
+            "committed-at-utc": datetime.now(UTC).isoformat(),
+            **(snapshot_properties or {}),
+        }
+        novos, alterados = _separar_novos_de_alterados(candidates, chaves_existentes, join_cols)
+
+        # Tudo numa transacao so: a publicacao de uma tabela produz UM snapshot, mesmo tendo
+        # sido dividida em varias operacoes por questao de escala.
+        with table.transaction() as transacao:
+            if novos.num_rows:
+                transacao.append(novos, snapshot_properties=propriedades)
+                rows_inserted = novos.num_rows
+            for lote in _em_lotes(alterados, _LOTE_UPSERT):
+                resultado = transacao.upsert(
+                    lote, join_cols=list(join_cols), snapshot_properties=propriedades
+                )
+                rows_inserted += resultado.rows_inserted
+                rows_updated += resultado.rows_updated
         table.refresh()
 
     after = table.current_snapshot().snapshot_id if table.current_snapshot() else None

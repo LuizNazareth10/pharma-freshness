@@ -183,6 +183,12 @@ _LAKE_TABLES: tuple[LakeTable, ...] = (
         join_cols=("id_recall",),
         grain="Uma acao de recolhimento identificada por recall_number.",
     ),
+    LakeTable(
+        layer="gold",
+        name="metricas_frescor",
+        join_cols=("id_medicao",),
+        grain="Uma medicao de frescor de uma fonte em um instante; serie temporal, nao estado.",
+    ),
 )
 
 LAKE_TABLES: dict[str, LakeTable] = {table.identifier: table for table in _LAKE_TABLES}

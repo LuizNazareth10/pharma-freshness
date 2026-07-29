@@ -36,11 +36,10 @@ with recalls as (
 
 com_farmaco as (
 
-    select
-        r.*,
-        m.rxcui
-    from recalls r
-    left join {{ ref('rxnorm_mapping') }} m on m.nome_normalizado = r.nome_normalizado
+    -- Nao ha mais join com `rxnorm_mapping`: a chave do farmaco depende so do nome
+    -- normalizado, que ja esta aqui. O enriquecimento RxNorm mora em `dim_farmaco` e pode ser
+    -- reescrito la sem invalidar nenhuma linha deste fato.
+    select r.* from recalls r
 
 ),
 
@@ -51,7 +50,7 @@ final as (
 
         -- chaves estrangeiras. Recalls sem nome de substancia, generico ou marca caem no
         -- membro "nao informado" da dimensao, preservando a integridade referencial.
-        {{ id_farmaco_de('c.rxcui', 'c.nome_normalizado') }} as id_farmaco,
+        {{ id_farmaco_de('c.nome_normalizado') }}            as id_farmaco,
         cast(strftime(c.report_date, '%Y%m%d') as integer)   as id_data_relatorio,
         {{ chave_hash(['c.fonte']) }}                        as id_fonte,
         b.id_bula,

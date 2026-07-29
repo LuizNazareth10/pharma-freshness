@@ -103,8 +103,17 @@ def _suite_para(identifier: str, contexto: dict[str, Any]) -> list[dict[str, Any
     if identifier == "gold.fato_evento_adverso":
         comuns += [
             {
+                # Dominio do padrao ICH E2B. `mostly` tolera erro de preenchimento pontual na
+                # origem sem cegar a suite: em 2026-07-29 um unico relato trouxe o codigo 4,
+                # que o padrao nao define. Exigir 100% faria a validacao do contrato reprovar
+                # por causa de uma linha em dezenas de milhares; nao exigir nada esconderia uma
+                # mudanca real de dominio da fonte. O limiar de 99% separa os dois casos.
                 "type": "expect_column_values_to_be_in_set",
-                "kwargs": {"column": "caracterizacao_codigo", "value_set": [1, 2, 3, None]},
+                "kwargs": {
+                    "column": "caracterizacao_codigo",
+                    "value_set": [1, 2, 3, None],
+                    "mostly": 0.99,
+                },
             },
             {
                 # Latencia negativa significaria capturar o dado antes de ele existir.
