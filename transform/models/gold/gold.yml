@@ -1,0 +1,244 @@
+version: 2
+
+models:
+  - name: dim_farmaco
+    description: >
+      Dimensao conformada de farmaco, normalizada por RxNorm.
+      Grao: uma identidade de farmaco -- o RxCUI quando resolvido, o nome normalizado quando
+      nao. Farmacos nao mapeados permanecem na dimensao, marcados por `mapeado_rxnorm = false`.
+    columns:
+      - name: id_farmaco
+        description: Chave substituta deterministica da identidade do farmaco.
+        data_tests: [not_null, unique]
+      - name: nome_farmaco
+        description: Nome de exibicao; o nome RxNorm quando existe, senao o nome de origem.
+        data_tests: [not_null]
+      - name: rxcui
+        description: Identificador RxNorm do ingrediente; nulo quando nao mapeado.
+      - name: mapeado_rxnorm
+        description: Indica se o RxNorm resolveu algum RxCUI para esta identidade.
+        data_tests: [not_null]
+      - name: identidade_confiavel
+        description: >
+          Verdadeiro quando ha RxCUI E ele esta no nivel de ingrediente (IN/MIN/PIN).
+          Comparacoes de volume entre farmacos deveriam filtrar por este campo.
+        data_tests: [not_null]
+      - name: tipo_correspondencia
+        data_tests:
+          - accepted_values:
+              arguments:
+                  values: ["exata", "aproximada", "nao_mapeado"]
+
+  - name: dim_reacao
+    description: >
+      Dimensao de reacao adversa.
+      Grao: um termo preferencial MedDRA distinto, normalizado.
+      Sem codigo MedDRA: o dicionario e licenciado e o openFDA expoe apenas o texto do termo.
+    columns:
+      - name: id_reacao
+        data_tests: [not_null, unique]
+      - name: reacao_normalizada
+        data_tests: [not_null, unique]
+      - name: reacao
+        description: Grafia mais frequente do termo, para exibicao.
+        data_tests: [not_null]
+
+  - name: dim_data
+    description: >
+      Dimensao de calendario gerada.
+      Grao: um dia. Gerada e nao derivada dos fatos, para que dias sem evento existam como zero.
+    columns:
+      - name: id_data
+        description: Dia no formato YYYYMMDD.
+        data_tests: [not_null, unique]
+      - name: data
+        data_tests: [not_null, unique]
+      - name: ano
+        data_tests: [not_null]
+
+  - name: dim_fonte
+    description: >
+      Dimensao de fonte do pipeline.
+      Grao: um sistema de origem. Atributos vem do seed `fonte_referencia`.
+    columns:
+      - name: id_fonte
+        data_tests: [not_null, unique]
+      - name: fonte
+        data_tests:
+          - not_null
+          - unique
+          - accepted_values:
+              arguments: {values: ["dailymed", "faers", "res"]}
+      - name: cadencia_esperada
+        description: Cadencia declarada da fonte; base do alerta de frescor da Fase 4.
+        data_tests: [not_null]
+
+  - name: dim_bula
+    description: >
+      Dimensao de bula SPL do DailyMed.
+      Grao: uma linha por `setid`, na versao corrente. Vira SCD tipo 2 quando a bronze passar
+      a guardar o historico de versoes.
+    columns:
+      - name: id_bula
+        data_tests: [not_null, unique]
+      - name: setid
+        data_tests: [not_null, unique]
+      - name: id_farmaco
+        description: Ligacao ao vocabulario RxNorm; nula quando o produto nao foi resolvido.
+        data_tests:
+          - relationships:
+              arguments:
+                  to: ref('dim_farmaco')
+                  field: id_farmaco
+      - name: published_date
+        data_tests:
+          - not_null
+          - data_plausivel:
+              arguments:
+                  minima: "{{ var('data_minima_plausivel') }}"
+
+  - name: fato_evento_adverso
+    description: >
+      Fato central de farmacovigilancia.
+
+      GRAO: um par farmaco-reacao distinto dentro de um relato enviado a FDA.
+      Chave logica: (safetyreportid, id_farmaco, id_reacao).
+
+      ATENCAO AO CONTAR: o FAERS nao liga um medicamento especifico a uma reacao especifica.
+      As linhas sao o produto cartesiano das duas listas dentro do relato, que e a unidade
+      usada em analise de desproporcionalidade. Somar linhas NAO conta eventos clinicos --
+      use `count(distinct safetyreportid)`.
+
+      Nenhuma linha prova causalidade: um relato registra suspeita, nao nexo causal.
+    data_tests:
+      - chave_composta_unica:
+          arguments:
+              colunas: [safetyreportid, id_farmaco, id_reacao]
+    columns:
+      - name: id_evento
+        description: Chave substituta deterministica do grao; chave do MERGE incremental.
+        data_tests: [not_null, unique]
+      - name: id_farmaco
+        description: Chave estrangeira para `dim_farmaco`.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                  to: ref('dim_farmaco')
+                  field: id_farmaco
+      - name: id_reacao
+        description: Chave estrangeira para `dim_reacao`.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                  to: ref('dim_reacao')
+                  field: id_reacao
+      - name: id_data_recebimento
+        description: Chave estrangeira para `dim_data`, pela data de recebimento pela FDA.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                  to: ref('dim_data')
+                  field: id_data
+      - name: id_fonte
+        description: Chave estrangeira para `dim_fonte`.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                  to: ref('dim_fonte')
+                  field: id_fonte
+      - name: id_bula
+        description: Chave estrangeira opcional para `dim_bula`, via `spl_set_id` do openFDA.
+        data_tests:
+          - relationships:
+              arguments:
+                  to: ref('dim_bula')
+                  field: id_bula
+      - name: safetyreportid
+        description: Dimensao degenerada -- identificador do relato de origem.
+        data_tests: [not_null]
+      - name: suspeito_primario
+        description: Verdadeiro quando o notificador caracterizou o medicamento como suspeito.
+        data_tests: [not_null]
+      - name: event_time
+        description: Relogio da fonte (recebimento pela FDA), em UTC.
+        data_tests: [not_null]
+      - name: ingest_time
+        description: Relogio do pipeline (captura), em UTC.
+        data_tests: [not_null]
+      - name: latencia_ingestao_horas
+        description: >
+          Horas entre `event_time` (primeiro recebimento pela FDA) e `ingest_time`.
+          Mede a IDADE DO CASO na captura, nao o atraso do pipeline: um relato antigo revisado
+          hoje produz latencia de milhares de horas por caracteristica da fonte.
+        data_tests: [not_null]
+      - name: latencia_atualizacao_horas
+        description: >
+          Horas entre `receiptdate` (informacao mais recente da versao) e `ingest_time`.
+          Esta e a latencia que o pipeline controla e a base honesta do staleness gap.
+        data_tests: [not_null]
+      - name: fonte
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments: {values: ["faers"]}
+
+  - name: fato_recall
+    description: >
+      Fato de acoes de recolhimento.
+      GRAO: uma acao de recolhimento identificada por `recall_number`.
+      `event_id` agrupa recalls relacionados e se repete entre linhas -- nao e chave.
+    columns:
+      - name: id_recall
+        data_tests: [not_null, unique]
+      - name: recall_number
+        data_tests: [not_null, unique]
+      - name: id_farmaco
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                  to: ref('dim_farmaco')
+                  field: id_farmaco
+      - name: id_data_relatorio
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                  to: ref('dim_data')
+                  field: id_data
+      - name: id_fonte
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                  to: ref('dim_fonte')
+                  field: id_fonte
+      - name: classificacao_nivel
+        description: "1 = Class I (mais grave), 2, 3."
+        data_tests:
+          - accepted_values:
+              arguments:
+                  values: [1, 2, 3]
+                  quote: false
+      - name: event_time
+        data_tests: [not_null]
+      - name: ingest_time
+        data_tests: [not_null]
+      - name: fonte
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments: {values: ["res"]}
+
+seeds:
+  - name: fonte_referencia
+    description: >
+      Atributos declarados de cada fonte do pipeline: mantenedor, cadencia esperada e URL.
+      Sao conhecimento do projeto, nao dado observado -- por isso vivem sob revisao de codigo.
+    columns:
+      - name: fonte
+        data_tests: [not_null, unique]

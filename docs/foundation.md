@@ -382,6 +382,20 @@ AS OF TIMESTAMP '2026-07-26 00:00:00'
 
 **Objetivo**: dado bruto vira modelo analítico consumível.
 
+> **Status da implementação:** concluída e validada localmente. O tutorial executável está em
+> [`docs/fase-3.md`](fase-3.md), os contratos em
+> [`docs/contratos-dados-fase-3.md`](contratos-dados-fase-3.md) e as decisões arquiteturais em
+> [`docs/decisoes-arquitetura-fase-3.md`](decisoes-arquitetura-fase-3.md).
+>
+> Três pontos deste roteiro foram ajustados diante do dado real; cada ajuste está justificado
+> nos documentos acima:
+> 1. **dbt não escreve Iceberg.** O `dbt-duckdb` lê, mas não grava. O DuckDB virou o motor de
+>    transformação e a publicação em Iceberg ficou a cargo do PyIceberg — a mesma função de
+>    `UPSERT` que já publicava a bronze.
+> 2. **O grão da fato foi corrigido.** O texto do Dia 7 e o exemplo de código se contradiziam.
+> 3. **`dim_reacao` não tem `codigo_meddra`.** O openFDA expõe o texto do termo, não o número:
+>    o MedDRA é licenciado.
+
 #### Dia 6 — Camada silver com dbt
 
 **O que fazer**:
@@ -392,11 +406,20 @@ AS OF TIMESTAMP '2026-07-26 00:00:00'
    - Normalizam nomes de fármacos via RxNorm (consulta à API ou tabela de mapeamento local)
 3. Materializar como tabelas Iceberg na camada silver
 
+> Na implementação, os arrays `patient.drug` e `patient.reaction` do FAERS viraram modelos
+> próprios (`stg_faers_drugs`, `stg_faers_reactions`), cada um com o grão declarado. Explodir
+> os dois no mesmo modelo produziria um grão ambíguo, porque a fonte não diz qual medicamento
+> se liga a qual reação.
+>
+> A ordenação da deduplicação ganhou um terceiro critério de desempate. Sem ele, linhas com o
+> mesmo `ingest_time` seriam escolhidas arbitrariamente e o modelo deixaria de ser
+> determinístico — o que impediria provar a idempotência da publicação.
+
 **Exemplo de modelo dbt**:
 ```sql
 -- models/silver/stg_faers.sql
 WITH dedup AS (
-  SELECT *,
+  SELECT *,   
     ROW_NUMBER() OVER (
       PARTITION BY report_id
       ORDER BY ingest_time DESC
@@ -427,6 +450,22 @@ WHERE rn = 1
 1. Definir o grão da tabela fato em uma frase: *"Cada linha representa um evento adverso individual relatado à FDA, por um fármaco específico"*
 2. Construir `fato_evento_adverso` e as dimensões: `dim_farmaco`, `dim_reacao`, `dim_data`, `dim_fonte`
 3. Usar materialização `incremental` para a fato (não recriar o histórico inteiro a cada execução)
+
+> **A frase do grão e o exemplo abaixo se contradizem**, e vale entender por quê: um relato do
+> FAERS cita vários fármacos, então "uma linha por relato" (`unique_key='report_id'`) não é
+> "uma linha por fármaco". Foi adotado o grão descrito em palavras, que é o mais fino:
+>
+> **uma linha = um par fármaco–reação distinto dentro de um relato**, com chave
+> `(safetyreportid, id_farmaco, id_reacao)`.
+>
+> Como a fonte não liga um medicamento específico a uma reação específica, as linhas são o
+> produto cartesiano das duas listas dentro do relato — a unidade usada em análise de
+> desproporcionalidade. Consequência prática: **somar linhas não conta eventos clínicos**; use
+> `count(distinct safetyreportid)`.
+>
+> A implementação acrescentou `dim_bula` (DailyMed é o estado oficial de um produto, portanto
+> dimensão) e `fato_recall` (um recolhimento é uma ação, portanto fato). Sem o segundo,
+> `stg_res` seria um beco sem saída na silver.
 
 **Exemplo de fato incremental**:
 ```sql
@@ -490,6 +529,17 @@ models:
               to: ref('dim_farmaco')
               field: id_farmaco
 ```
+
+> Na implementação, as duas ferramentas ficaram com fronteiras distintas, e não sobrepostas:
+> o **dbt test** valida a transformação dentro do DuckDB, **antes** de publicar; o
+> **Great Expectations** valida o contrato da tabela Iceberg **depois** de publicada. A segunda
+> barreira pega o que a primeira não vê — conversão de tipo na escrita, UPSERT em chave errada,
+> publicação parcial, camada esquecida.
+>
+> Os testes não são decorativos: na primeira execução completa eles reprovaram a gold e
+> revelaram três defeitos reais de modelagem (49 chaves duplicadas no fato, 70 chaves
+> estrangeiras órfãs e a causa raiz comum — a regra de identidade do fármaco duplicada em
+> quatro modelos). O relato está na seção 8 de [`docs/fase-3.md`](fase-3.md).
 
 **O que você aprende**: testes de dados, reconciliação, por que "toda resposta deve citar fonte e data" vira um teste automático
 

@@ -1,0 +1,4 @@
+fonte,nome_exibicao,mantenedor,cadencia_esperada,url_api,descricao
+dailymed,DailyMed,National Library of Medicine,diaria,https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json,Indice de bulas estruturadas (SPL) com versao e data de publicacao.
+faers,FAERS via openFDA,Food and Drug Administration,diaria,https://api.fda.gov/drug/event.json,Relatos espontaneos de eventos adversos de medicamentos (ICSR).
+res,RES via openFDA,Food and Drug Administration,semanal,https://api.fda.gov/drug/enforcement.json,Acoes de recolhimento de medicamentos classificadas por risco.

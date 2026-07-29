@@ -39,6 +39,10 @@ def _non_negative_int_env(name: str, default: str) -> int:
     return value
 
 
+def _bool_env(name: str, default: str) -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     minio_user: str
@@ -53,6 +57,8 @@ class Settings:
     res_lookback_days: int
     local_dir: Path
     iceberg_warehouse_prefix: str
+    rxnorm_offline: bool
+    rxnorm_max_lookups: int
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -71,6 +77,8 @@ class Settings:
             res_lookback_days=_non_negative_int_env("RES_LOOKBACK_DAYS", "90"),
             local_dir=local_dir,
             iceberg_warehouse_prefix=os.getenv("ICEBERG_WAREHOUSE_PREFIX", "iceberg").strip("/"),
+            rxnorm_offline=_bool_env("RXNORM_OFFLINE", "0"),
+            rxnorm_max_lookups=_non_negative_int_env("RXNORM_MAX_LOOKUPS", "500"),
         )
 
     @property
@@ -82,6 +90,30 @@ class Settings:
     @property
     def dlt_pipelines_dir(self) -> Path:
         path = self.local_dir / "dlt"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
+    def duckdb_path(self) -> Path:
+        """Banco DuckDB usado como motor de transformacao do dbt."""
+        path = self.local_dir / "duckdb" / "pharma.duckdb"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
+    def rxnorm_cache_path(self) -> Path:
+        """Cache persistente das consultas ao RxNav, para nao repetir chamadas entre execucoes."""
+        path = self.local_dir / "rxnorm" / "cache.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
+    def dbt_project_dir(self) -> Path:
+        return PROJECT_ROOT / "transform"
+
+    @property
+    def dbt_target_dir(self) -> Path:
+        path = self.local_dir / "dbt"
         path.mkdir(parents=True, exist_ok=True)
         return path
 

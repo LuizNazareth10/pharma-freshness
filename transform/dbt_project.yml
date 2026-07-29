@@ -1,0 +1,40 @@
+name: pharma_freshness
+version: "0.3.0"
+config-version: 2
+
+profile: pharma_freshness
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+# Os artefatos (manifest, logs, docs) sao gravados em .local/dbt para nao poluir o
+# repositorio. O caminho vem de DBT_TARGET_PATH/DBT_LOG_PATH, exportados por
+# `pharma-pipeline transform`; configurar isso aqui esta descontinuado no dbt.
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  pharma_freshness:
+    bronze:
+      # Copia local, sem regra de negocio, das tabelas Iceberg da bronze.
+      # Nao e publicada de volta: a bronze do lakehouse ja e a fonte destes modelos.
+      +schema: bronze
+      +materialized: table
+    silver:
+      +schema: silver
+      +materialized: table
+    gold:
+      +schema: gold
+      +materialized: table
+
+seeds:
+  pharma_freshness:
+    +schema: gold
+
+vars:
+  # Limite inferior plausivel para datas de eventos. Datas anteriores indicam erro de origem
+  # ou de parsing e sao capturadas pelos testes de qualidade do Dia 8.
+  data_minima_plausivel: "1990-01-01"
+  # Numero de dias do calendario gerado em dim_data a partir de data_minima_plausivel.
+  dias_calendario: 18993

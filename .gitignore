@@ -4,6 +4,13 @@
 .venv/
 .dlt/
 
+# Artefatos do dbt. `target/` e `logs/` so aparecem se alguem rodar o dbt sem as variaveis
+# de ambiente do projeto; o caminho normal e .local/dbt, ja coberto acima.
+transform/target/
+transform/logs/
+transform/dbt_packages/
+.user.yml
+
 # Python
 __pycache__/
 *.py[cod]

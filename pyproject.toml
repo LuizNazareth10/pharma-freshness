@@ -4,17 +4,29 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pharma-freshness-pipeline"
-version = "0.2.0"
-description = "Pipeline didatico de farmacovigilancia com dlt, MinIO e Apache Iceberg"
+version = "0.3.0"
+description = "Pipeline didatico de farmacovigilancia com dlt, MinIO, Apache Iceberg e dbt"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  # Fase 2 -- ingestao e lakehouse
   "dlt[filesystem]==1.29.1",
   "pyarrow==22.0.0",
   "pyiceberg[sql-sqlite,s3fs]==0.11.1",
   "psutil==7.2.2",
   "python-dotenv==1.2.2",
   "requests==2.34.2",
+  # Fase 3 -- transformacao e qualidade.
+  # dbt-core e fixado na mesma serie do dbt-duckdb: o adaptador declara apenas
+  # `dbt-core>=1.8.0`, entao sem o limite o pip instalaria uma versao de core mais nova
+  # do que a testada contra este adaptador.
+  "dbt-core>=1.10,<1.11",
+  "dbt-duckdb==1.10.1",
+  "duckdb==1.4.5",
+  # O Great Expectations nao declara limite superior de pandas; o limite esta aqui porque a
+  # serie 1.x do GX foi publicada antes do pandas 3.
+  "great-expectations==1.19.1",
+  "pandas>=2.2,<3",
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,245 @@
+[0m15:59:53.216375 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B51FA70E60>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B51E538C80>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B52069C230>]}
+
+
+============================== 15:59:53.226405 | 5d3c8036-9db9-432e-a912-99d97383c502 ==============================
+[0m15:59:53.226405 [info ] [MainThread]: Running with dbt=1.10.22
+[0m15:59:53.227405 [debug] [MainThread]: running dbt with arguments {'version_check': 'True', 'no_print': 'None', 'static_parser': 'True', 'warn_error_options': 'WarnErrorOptionsV2(error=[], warn=[], silence=[])', 'target_path': 'None', 'printer_width': '80', 'write_json': 'True', 'introspect': 'True', 'log_cache_events': 'False', 'empty': 'False', 'cache_selected_only': 'False', 'fail_fast': 'False', 'debug': 'False', 'log_format': 'default', 'profiles_dir': 'transform', 'send_anonymous_usage_stats': 'True', 'quiet': 'False', 'warn_error': 'None', 'partial_parse': 'True', 'use_colors': 'True', 'invocation_command': 'dbt run --project-dir transform --profiles-dir transform --select stg_dailymed', 'indirect_selection': 'eager', 'use_experimental_parser': 'False', 'log_path': "transform\\{{ env_var('PHARMA_DBT_TARGET_DIR', 'target') }}\\logs"}
+[0m15:59:53.489858 [warn ] [MainThread]: [[33mWARNING[0m]: Deprecated functionality
+The `log-path` config in `dbt_project.yml` has been deprecated, and will no
+longer be supported in a future version of dbt-core. If you wish to write dbt
+logs to a custom directory, please use the --log-path CLI flag or DBT_LOG_PATH
+env var instead.
+[0m15:59:53.489858 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'deprecation', 'label': '5d3c8036-9db9-432e-a912-99d97383c502', 'property_': 'warn', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B522297650>]}
+[0m15:59:53.491362 [warn ] [MainThread]: [[33mWARNING[0m]: Deprecated functionality
+The `target-path` config in `dbt_project.yml` has been deprecated, and will no
+longer be supported in a future version of dbt-core. If you wish to write dbt
+artifacts to a custom directory, please use the --target-path CLI flag or
+DBT_TARGET_PATH env var instead.
+[0m15:59:53.491362 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'deprecation', 'label': '5d3c8036-9db9-432e-a912-99d97383c502', 'property_': 'warn', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B521EF3290>]}
+[0m15:59:53.762767 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'project_id', 'label': '5d3c8036-9db9-432e-a912-99d97383c502', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B521F538F0>]}
+[0m15:59:53.841354 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'adapter_info', 'label': '5d3c8036-9db9-432e-a912-99d97383c502', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B520B19A00>]}
+[0m15:59:53.844359 [info ] [MainThread]: Registered adapter: duckdb=1.10.1
+[0m15:59:54.204671 [debug] [MainThread]: checksum: 04c83ee057a648a2f8e380c895ffead170732fa039f068d62b9d36aaeefaf7cc, vars: {}, profile: , target: , version: 1.10.22
+[0m15:59:54.206673 [info ] [MainThread]: Unable to do partial parsing because saved manifest not found. Starting full parse.
+[0m15:59:54.207671 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'partial_parser', 'label': '5d3c8036-9db9-432e-a912-99d97383c502', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B520A4A150>]}
+[0m15:59:57.034472 [warn ] [MainThread]: [[33mWARNING[0m]: Configuration paths exist in your dbt_project.yml file which do not apply to any resources.
+There are 2 unused configuration paths:
+- models.pharma_freshness.gold
+- seeds.pharma_freshness
+[0m15:59:57.047507 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'load_project', 'label': '5d3c8036-9db9-432e-a912-99d97383c502', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B5229C01D0>]}
+[0m15:59:57.124780 [debug] [MainThread]: Wrote artifact WritableManifest to C:/Users/Luiz/Documents/LuizNazareth/pharma-freshness-pipeline/.local/dbt\manifest.json
+[0m15:59:57.127781 [debug] [MainThread]: Wrote artifact SemanticManifest to C:/Users/Luiz/Documents/LuizNazareth/pharma-freshness-pipeline/.local/dbt\semantic_manifest.json
+[0m15:59:57.180161 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'resource_counts', 'label': '5d3c8036-9db9-432e-a912-99d97383c502', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B522987F50>]}
+[0m15:59:57.181666 [info ] [MainThread]: Found 1 model, 10 data tests, 3 sources, 487 macros
+[0m15:59:57.181666 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'runnable_timing', 'label': '5d3c8036-9db9-432e-a912-99d97383c502', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B51DE2A630>]}
+[0m15:59:57.184672 [info ] [MainThread]: 
+[0m15:59:57.184672 [info ] [MainThread]: Concurrency: 4 threads (target='dev')
+[0m15:59:57.184672 [info ] [MainThread]: 
+[0m15:59:57.185671 [debug] [MainThread]: Acquiring new duckdb connection 'master'
+[0m15:59:57.186671 [debug] [ThreadPool]: Acquiring new duckdb connection 'list_pharma'
+[0m16:00:00.455630 [debug] [ThreadPool]: Using duckdb connection "list_pharma"
+[0m16:00:00.455630 [debug] [ThreadPool]: On list_pharma: /* {"app": "dbt", "dbt_version": "1.10.22", "profile_name": "pharma_freshness", "target_name": "dev", "connection_name": "list_pharma"} */
+
+    
+    select schema_name
+    from system.information_schema.schemata
+    
+    where lower(catalog_name) = '"pharma"'
+    
+  
+  
+[0m16:00:00.456634 [debug] [ThreadPool]: Opening a new connection, currently in state init
+[0m16:00:02.447040 [debug] [ThreadPool]: SQL status: OK in 1.990 seconds
+[0m16:00:02.450561 [debug] [ThreadPool]: On list_pharma: Close
+[0m16:00:02.453079 [debug] [ThreadPool]: Re-using an available connection from the pool (formerly list_pharma, now create_pharma_silver)
+[0m16:00:02.455087 [debug] [ThreadPool]: Creating schema "database: "pharma"
+schema: "silver"
+"
+[0m16:00:02.463606 [debug] [ThreadPool]: Using duckdb connection "create_pharma_silver"
+[0m16:00:02.464612 [debug] [ThreadPool]: On create_pharma_silver: /* {"app": "dbt", "dbt_version": "1.10.22", "profile_name": "pharma_freshness", "target_name": "dev", "connection_name": "create_pharma_silver"} */
+
+    
+        select type from duckdb_databases()
+        where lower(database_name)='pharma'
+        and type='sqlite'
+    
+  
+[0m16:00:02.465613 [debug] [ThreadPool]: Opening a new connection, currently in state closed
+[0m16:00:02.470132 [debug] [ThreadPool]: SQL status: OK in 0.004 seconds
+[0m16:00:02.473653 [debug] [ThreadPool]: Using duckdb connection "create_pharma_silver"
+[0m16:00:02.475651 [debug] [ThreadPool]: On create_pharma_silver: BEGIN
+[0m16:00:02.476653 [debug] [ThreadPool]: SQL status: OK in 0.000 seconds
+[0m16:00:02.477813 [debug] [ThreadPool]: Using duckdb connection "create_pharma_silver"
+[0m16:00:02.477813 [debug] [ThreadPool]: On create_pharma_silver: /* {"app": "dbt", "dbt_version": "1.10.22", "profile_name": "pharma_freshness", "target_name": "dev", "connection_name": "create_pharma_silver"} */
+
+    
+    
+        create schema if not exists "pharma"."silver"
+    
+[0m16:00:02.481836 [debug] [ThreadPool]: SQL status: OK in 0.003 seconds
+[0m16:00:02.483845 [debug] [ThreadPool]: On create_pharma_silver: COMMIT
+[0m16:00:02.483845 [debug] [ThreadPool]: Using duckdb connection "create_pharma_silver"
+[0m16:00:02.484841 [debug] [ThreadPool]: On create_pharma_silver: COMMIT
+[0m16:00:02.490354 [debug] [ThreadPool]: SQL status: OK in 0.005 seconds
+[0m16:00:02.491859 [debug] [ThreadPool]: On create_pharma_silver: Close
+[0m16:00:02.492865 [debug] [ThreadPool]: Acquiring new duckdb connection 'list_pharma_silver'
+[0m16:00:02.500372 [debug] [ThreadPool]: Using duckdb connection "list_pharma_silver"
+[0m16:00:02.500372 [debug] [ThreadPool]: On list_pharma_silver: BEGIN
+[0m16:00:02.500372 [debug] [ThreadPool]: Opening a new connection, currently in state init
+[0m16:00:02.501875 [debug] [ThreadPool]: SQL status: OK in 0.001 seconds
+[0m16:00:02.502880 [debug] [ThreadPool]: Using duckdb connection "list_pharma_silver"
+[0m16:00:02.502880 [debug] [ThreadPool]: On list_pharma_silver: /* {"app": "dbt", "dbt_version": "1.10.22", "profile_name": "pharma_freshness", "target_name": "dev", "connection_name": "list_pharma_silver"} */
+select
+      'pharma' as database,
+      table_name as name,
+      table_schema as schema,
+      CASE table_type
+        WHEN 'BASE TABLE' THEN 'table'
+        WHEN 'VIEW' THEN 'view'
+        WHEN 'LOCAL TEMPORARY' THEN 'table'
+        END as type
+    from system.information_schema.tables
+    where lower(table_schema) = 'silver'
+    and lower(table_catalog) = 'pharma'
+  
+[0m16:00:02.530428 [debug] [ThreadPool]: SQL status: OK in 0.027 seconds
+[0m16:00:02.532940 [debug] [ThreadPool]: On list_pharma_silver: ROLLBACK
+[0m16:00:02.534941 [debug] [ThreadPool]: Failed to rollback 'list_pharma_silver'
+[0m16:00:02.534941 [debug] [ThreadPool]: On list_pharma_silver: Close
+[0m16:00:02.536940 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'runnable_timing', 'label': '5d3c8036-9db9-432e-a912-99d97383c502', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B52038B830>]}
+[0m16:00:02.536940 [debug] [MainThread]: Using duckdb connection "master"
+[0m16:00:02.537939 [debug] [MainThread]: On master: BEGIN
+[0m16:00:02.537939 [debug] [MainThread]: Opening a new connection, currently in state init
+[0m16:00:02.539448 [debug] [MainThread]: SQL status: OK in 0.001 seconds
+[0m16:00:02.539448 [debug] [MainThread]: On master: COMMIT
+[0m16:00:02.539448 [debug] [MainThread]: Using duckdb connection "master"
+[0m16:00:02.540458 [debug] [MainThread]: On master: COMMIT
+[0m16:00:02.540458 [debug] [MainThread]: SQL status: OK in 0.000 seconds
+[0m16:00:02.541963 [debug] [MainThread]: On master: Close
+[0m16:00:02.549474 [debug] [Thread-1 (]: Began running node model.pharma_freshness.stg_dailymed
+[0m16:00:02.550482 [info ] [Thread-1 (]: 1 of 1 START sql table model silver.stg_dailymed ............................... [RUN]
+[0m16:00:02.551482 [debug] [Thread-1 (]: Acquiring new duckdb connection 'model.pharma_freshness.stg_dailymed'
+[0m16:00:02.551989 [debug] [Thread-1 (]: Began compiling node model.pharma_freshness.stg_dailymed
+[0m16:00:04.196764 [debug] [Thread-1 (]: Writing injected SQL for node "model.pharma_freshness.stg_dailymed"
+[0m16:00:04.199271 [debug] [Thread-1 (]: Began executing node model.pharma_freshness.stg_dailymed
+[0m16:00:04.232696 [debug] [Thread-1 (]: Writing runtime sql for node "model.pharma_freshness.stg_dailymed"
+[0m16:00:04.234696 [debug] [Thread-1 (]: Using duckdb connection "model.pharma_freshness.stg_dailymed"
+[0m16:00:04.235699 [debug] [Thread-1 (]: On model.pharma_freshness.stg_dailymed: BEGIN
+[0m16:00:04.235699 [debug] [Thread-1 (]: Opening a new connection, currently in state init
+[0m16:00:04.236700 [debug] [Thread-1 (]: SQL status: OK in 0.001 seconds
+[0m16:00:04.236700 [debug] [Thread-1 (]: Using duckdb connection "model.pharma_freshness.stg_dailymed"
+[0m16:00:04.237700 [debug] [Thread-1 (]: On model.pharma_freshness.stg_dailymed: /* {"app": "dbt", "dbt_version": "1.10.22", "profile_name": "pharma_freshness", "target_name": "dev", "node_id": "model.pharma_freshness.stg_dailymed"} */
+
+  
+    
+    
+
+    create  table
+      "pharma"."silver"."stg_dailymed__dbt_tmp"
+  
+    as (
+      
+
+with fonte as (
+
+    select * from "pharma"."bronze"."dailymed_spls"
+
+),
+
+deduplicado as (
+
+    select
+        *,
+        row_number() over (
+            partition by setid
+            order by ingest_time desc, spl_version desc
+        ) as rn
+    from fonte
+
+),
+
+tipado as (
+
+    select
+        setid,
+        cast(spl_version as integer)                            as spl_version,
+        trim(title)                                             as titulo_original,
+
+        -- O titulo do DailyMed segue o padrao "PRODUTO (INGREDIENTES) FORMA [LABORATORIO]".
+        -- A extracao abaixo e best-effort e esta documentada como tal: o texto canonico da
+        -- bula vive no XML completo, que esta fase ainda nao ingere.
+        nullif(trim(regexp_extract(title, '\[([^\]]*)\]$', 1)), '')      as laboratorio,
+        nullif(trim(regexp_replace(
+            regexp_replace(title, '\s*\[[^\]]*\]\s*$', ''),
+            '\s*\(.*$', ''
+        )), '')                                                 as produto_nome,
+
+        cast(published_date as date)                            as published_date,
+        cast(event_time as timestamp with time zone)            as event_time,
+        cast(ingest_time as timestamp with time zone)           as ingest_time,
+        fonte,
+        source_url,
+        extraction_id
+    from deduplicado
+    where rn = 1
+
+)
+
+select * from tipado
+    );
+  
+  
+[0m16:00:04.270294 [debug] [Thread-1 (]: SQL status: OK in 0.033 seconds
+[0m16:00:04.278313 [debug] [Thread-1 (]: Using duckdb connection "model.pharma_freshness.stg_dailymed"
+[0m16:00:04.278313 [debug] [Thread-1 (]: On model.pharma_freshness.stg_dailymed: /* {"app": "dbt", "dbt_version": "1.10.22", "profile_name": "pharma_freshness", "target_name": "dev", "node_id": "model.pharma_freshness.stg_dailymed"} */
+alter table "pharma"."silver"."stg_dailymed__dbt_tmp" rename to "stg_dailymed"
+[0m16:00:04.280313 [debug] [Thread-1 (]: SQL status: OK in 0.002 seconds
+[0m16:00:04.300392 [debug] [Thread-1 (]: On model.pharma_freshness.stg_dailymed: COMMIT
+[0m16:00:04.300392 [debug] [Thread-1 (]: Using duckdb connection "model.pharma_freshness.stg_dailymed"
+[0m16:00:04.301895 [debug] [Thread-1 (]: On model.pharma_freshness.stg_dailymed: COMMIT
+[0m16:00:04.310427 [debug] [Thread-1 (]: SQL status: OK in 0.009 seconds
+[0m16:00:04.317938 [debug] [Thread-1 (]: Using duckdb connection "model.pharma_freshness.stg_dailymed"
+[0m16:00:04.319441 [debug] [Thread-1 (]: On model.pharma_freshness.stg_dailymed: /* {"app": "dbt", "dbt_version": "1.10.22", "profile_name": "pharma_freshness", "target_name": "dev", "node_id": "model.pharma_freshness.stg_dailymed"} */
+
+      drop table if exists "pharma"."silver"."stg_dailymed__dbt_backup" cascade
+    
+[0m16:00:04.321444 [debug] [Thread-1 (]: SQL status: OK in 0.001 seconds
+[0m16:00:04.327236 [debug] [Thread-1 (]: On model.pharma_freshness.stg_dailymed: Close
+[0m16:00:04.330415 [debug] [Thread-1 (]: Sending event: {'category': 'dbt', 'action': 'run_model', 'label': '5d3c8036-9db9-432e-a912-99d97383c502', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B51DC4C7D0>]}
+[0m16:00:04.330962 [info ] [Thread-1 (]: 1 of 1 OK created sql table model silver.stg_dailymed .......................... [[32mOK[0m in 1.78s]
+[0m16:00:04.332014 [debug] [Thread-1 (]: Finished running node model.pharma_freshness.stg_dailymed
+[0m16:00:04.333573 [debug] [MainThread]: Using duckdb connection "master"
+[0m16:00:04.333573 [debug] [MainThread]: On master: BEGIN
+[0m16:00:04.334581 [debug] [MainThread]: Opening a new connection, currently in state closed
+[0m16:00:04.335580 [debug] [MainThread]: SQL status: OK in 0.001 seconds
+[0m16:00:04.336583 [debug] [MainThread]: On master: COMMIT
+[0m16:00:04.336583 [debug] [MainThread]: Using duckdb connection "master"
+[0m16:00:04.336583 [debug] [MainThread]: On master: COMMIT
+[0m16:00:04.337581 [debug] [MainThread]: SQL status: OK in 0.000 seconds
+[0m16:00:04.338584 [debug] [MainThread]: On master: Close
+[0m16:00:04.338584 [debug] [MainThread]: Connection 'master' was properly closed.
+[0m16:00:04.339584 [debug] [MainThread]: Connection 'create_pharma_silver' was properly closed.
+[0m16:00:04.339584 [debug] [MainThread]: Connection 'list_pharma_silver' was properly closed.
+[0m16:00:04.339584 [debug] [MainThread]: Connection 'model.pharma_freshness.stg_dailymed' was properly closed.
+[0m16:00:04.340582 [info ] [MainThread]: 
+[0m16:00:04.342089 [info ] [MainThread]: Finished running 1 table model in 0 hours 0 minutes and 7.15 seconds (7.15s).
+[0m16:00:04.342089 [debug] [MainThread]: Command end result
+[0m16:00:04.366669 [debug] [MainThread]: Wrote artifact WritableManifest to C:/Users/Luiz/Documents/LuizNazareth/pharma-freshness-pipeline/.local/dbt\manifest.json
+[0m16:00:04.370184 [debug] [MainThread]: Wrote artifact SemanticManifest to C:/Users/Luiz/Documents/LuizNazareth/pharma-freshness-pipeline/.local/dbt\semantic_manifest.json
+[0m16:00:04.379217 [debug] [MainThread]: Wrote artifact RunExecutionResult to C:/Users/Luiz/Documents/LuizNazareth/pharma-freshness-pipeline/.local/dbt\run_results.json
+[0m16:00:04.379217 [info ] [MainThread]: 
+[0m16:00:04.380218 [info ] [MainThread]: [32mCompleted successfully[0m
+[0m16:00:04.380218 [info ] [MainThread]: 
+[0m16:00:04.380218 [info ] [MainThread]: Done. PASS=1 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=1
+[0m16:00:04.381725 [warn ] [MainThread]: [[33mWARNING[0m][DeprecationsSummary]: Deprecated functionality
+Summary of encountered deprecations:
+- ConfigLogPathDeprecation: 1 occurrence
+- ConfigTargetPathDeprecation: 1 occurrence
+To see all deprecation instances instead of just the first occurrence of each,
+run command again with the `--show-all-deprecations` flag. You may also need to
+run with `--no-partial-parse` as some deprecations are only encountered during
+parsing.
+[0m16:00:04.383733 [debug] [MainThread]: Command `dbt run` succeeded at 16:00:04.383733 after 11.33 seconds
+[0m16:00:04.383733 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B52074CA70>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B5229637A0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x000001B522375670>]}
+[0m16:00:04.384733 [debug] [MainThread]: Flushing usage events
+[0m16:00:05.274930 [debug] [MainThread]: An error was encountered while trying to flush usage events

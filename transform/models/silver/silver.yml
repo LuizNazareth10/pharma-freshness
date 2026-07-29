@@ -1,0 +1,184 @@
+version: 2
+
+models:
+  - name: stg_dailymed
+    description: >
+      Bulas SPL limpas e tipadas.
+      Grao: uma linha por `setid`, no estado mais recente conhecido.
+      `laboratorio` e `produto_nome` sao extraidos do titulo por expressao regular e sao
+      best-effort: o texto canonico vive no XML completo da bula, ainda nao ingerido.
+    columns:
+      - name: setid
+        description: Chave estavel do conjunto de versoes da bula.
+        data_tests: [not_null, unique]
+      - name: spl_version
+        description: Numero da versao corrente da bula.
+        data_tests: [not_null]
+      - name: published_date
+        description: Dia de publicacao desta versao no DailyMed.
+        data_tests:
+          - not_null
+          - data_plausivel:
+              arguments:
+                  minima: "{{ var('data_minima_plausivel') }}"
+      - name: ingest_time
+        description: Instante UTC da captura pelo pipeline.
+        data_tests: [not_null]
+      - name: fonte
+        description: Sistema de origem.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments: {values: ["dailymed"]}
+
+  - name: stg_faers
+    description: >
+      Relatos de eventos adversos limpos e tipados.
+      Grao: uma linha por `safetyreportid`. Nao contem medicamentos nem reacoes explodidos.
+    columns:
+      - name: safetyreportid
+        description: Identificador do relato de seguranca.
+        data_tests: [not_null, unique]
+      - name: receivedate
+        description: Primeira data em que a FDA recebeu o relato; base do `event_time`.
+        data_tests:
+          - not_null
+          - data_plausivel:
+              arguments:
+                  minima: "{{ var('data_minima_plausivel') }}"
+      - name: receiptdate
+        description: Data da informacao mais recente da versao exposta; watermark da fonte.
+        data_tests:
+          - data_plausivel:
+              arguments:
+                  minima: "{{ var('data_minima_plausivel') }}"
+      - name: grave
+        description: Indicador de gravidade derivado do campo `serious` da API.
+      - name: qtd_medicamentos
+        description: Quantidade de entradas no array `patient.drug` do relato.
+        data_tests: [not_null]
+      - name: qtd_reacoes
+        description: Quantidade de entradas no array `patient.reaction` do relato.
+        data_tests: [not_null]
+      - name: ingest_time
+        data_tests: [not_null]
+      - name: fonte
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments: {values: ["faers"]}
+
+  - name: stg_faers_drugs
+    description: >
+      Medicamentos citados em cada relato.
+      Grao: uma linha por (`safetyreportid`, `drug_seq`) -- posicao original no array.
+      O mesmo medicamento pode repetir dentro de um relato com dosagens diferentes; a fonte e
+      preservada como esta e a consolidacao acontece na gold.
+    data_tests:
+      - chave_composta_unica:
+          arguments:
+              colunas: [safetyreportid, drug_seq]
+    columns:
+      - name: safetyreportid
+        data_tests: [not_null]
+      - name: drug_seq
+        description: Posicao do medicamento no array `patient.drug`, comecando em 1.
+        data_tests: [not_null]
+      - name: caracterizacao_codigo
+        description: "Codigo da FDA: 1 suspeito, 2 concomitante, 3 interagente."
+        data_tests:
+          - accepted_values:
+              arguments:
+                  values: [1, 2, 3]
+                  quote: false
+      - name: nome_normalizado
+        description: >
+          Nome canonico levado ao RxNorm. Pode ser nulo quando o registro nao traz nome de
+          substancia, generico nem produto.
+      - name: ingest_time
+        data_tests: [not_null]
+
+  - name: stg_faers_reactions
+    description: >
+      Reacoes citadas em cada relato.
+      Grao: uma linha por (`safetyreportid`, `reaction_seq`) -- posicao original no array.
+    data_tests:
+      - chave_composta_unica:
+          arguments:
+              colunas: [safetyreportid, reaction_seq]
+    columns:
+      - name: safetyreportid
+        data_tests: [not_null]
+      - name: reaction_seq
+        description: Posicao da reacao no array `patient.reaction`, comecando em 1.
+        data_tests: [not_null]
+      - name: reacao_normalizada
+        description: Termo preferencial MedDRA em forma canonica.
+        data_tests: [not_null]
+      - name: desfecho_codigo
+        description: "Codigo da FDA: 1 a 6; 5 indica desfecho fatal."
+        data_tests:
+          - accepted_values:
+              arguments:
+                  values: [1, 2, 3, 4, 5, 6]
+                  quote: false
+      - name: ingest_time
+        data_tests: [not_null]
+
+  - name: stg_res
+    description: >
+      Recolhimentos limpos e tipados.
+      Grao: uma linha por `recall_number`. `event_id` agrupa acoes relacionadas e NAO e unico.
+    columns:
+      - name: recall_number
+        data_tests: [not_null, unique]
+      - name: report_date
+        data_tests:
+          - not_null
+          - data_plausivel:
+              arguments:
+                  minima: "{{ var('data_minima_plausivel') }}"
+      - name: classificacao_nivel
+        description: "Nivel de risco: 1 (Class I, mais grave) a 3."
+        data_tests:
+          - accepted_values:
+              arguments:
+                  values: [1, 2, 3]
+                  quote: false
+      - name: ingest_time
+        data_tests: [not_null]
+      - name: fonte
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments: {values: ["res"]}
+
+  - name: farmaco_nomes
+    description: >
+      Universo de nomes de farmaco a normalizar.
+      Grao: uma linha por `nome_normalizado` distinto observado em qualquer fonte.
+    columns:
+      - name: nome_normalizado
+        data_tests: [not_null, unique]
+      - name: ocorrencias
+        description: Quantas linhas de origem usaram este nome.
+        data_tests: [not_null]
+
+  - name: rxnorm_mapping
+    description: >
+      Resultado da consulta ao RxNorm por nome.
+      Grao: uma linha por `nome_normalizado` distinto.
+      Nomes sem correspondencia permanecem na tabela com `rxcui` nulo: um farmaco que o
+      vocabulario nao conhece nao pode desaparecer do modelo.
+    columns:
+      - name: nome_normalizado
+        data_tests: [not_null, unique]
+      - name: tipo_correspondencia
+        description: Como o RxCUI foi obtido.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                  values: ["exata", "aproximada", "nao_mapeado"]
+      - name: rxcui
+        description: Identificador RxNorm; nulo quando nao houve correspondencia.

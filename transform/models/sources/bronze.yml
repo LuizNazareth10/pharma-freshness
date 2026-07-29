@@ -1,0 +1,75 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: >
+      Camada bronze do lakehouse: tabelas Iceberg sobre o MinIO, escritas na Fase 2.
+      O dbt as le por meio do plugin `iceberg` do dbt-duckdb, que usa o PyIceberg e entrega os
+      dados ao DuckDB como Arrow. A leitura e sempre do snapshot corrente.
+
+      Os testes destas tabelas ficam declarados nos modelos `src_*`, e nao aqui. Cada
+      referencia a uma `source` com plugin dispara uma nova leitura do Iceberg; concentrar as
+      leituras nos modelos `src_*` evita varreduras repetidas do object storage e a colisao de
+      catalogo que ocorre quando duas tarefas registram a mesma fonte em paralelo.
+    schema: bronze
+    meta:
+      plugin: iceberg
+    tables:
+      - name: dailymed_spls
+        description: >
+          Indice de bulas SPL do DailyMed. Grao: uma linha por `setid`, no estado mais recente
+          conhecido. Nao contem o texto integral da bula, apenas o registro do indice.
+
+      - name: faers_events
+        description: >
+          Relatos de eventos adversos do FAERS via openFDA. Grao: uma linha por
+          `safetyreportid`, na versao mais recente exposta pela API. `patient_payload` guarda
+          os arrays de medicamentos e reacoes ainda nao explodidos.
+
+      - name: res_recalls
+        description: >
+          Recolhimentos de medicamentos do Recall Enterprise System via openFDA.
+          Grao: uma linha por `recall_number`.
+
+models:
+  - name: src_dailymed_spls
+    description: >
+      Copia local da tabela Iceberg `bronze.dailymed_spls`, sem regra de negocio.
+      Grao identico a fonte: uma linha por `setid`.
+    columns:
+      - name: setid
+        description: Identificador estavel do conjunto de versoes da bula.
+        data_tests: [not_null, unique]
+      - name: ingest_time
+        description: Instante UTC em que o extrator recebeu o registro.
+        data_tests: [not_null]
+      - name: raw_payload
+        description: Registro original completo, preservado para auditoria.
+        data_tests: [not_null]
+
+  - name: src_faers_events
+    description: >
+      Copia local da tabela Iceberg `bronze.faers_events`, sem regra de negocio.
+      Grao identico a fonte: uma linha por `safetyreportid`.
+    columns:
+      - name: safetyreportid
+        description: Identificador do relato de seguranca.
+        data_tests: [not_null, unique]
+      - name: patient_payload
+        description: Objeto `patient` serializado, com os arrays `drug` e `reaction`.
+        data_tests: [not_null]
+      - name: ingest_time
+        description: Instante UTC em que o extrator recebeu o registro.
+        data_tests: [not_null]
+
+  - name: src_res_recalls
+    description: >
+      Copia local da tabela Iceberg `bronze.res_recalls`, sem regra de negocio.
+      Grao identico a fonte: uma linha por `recall_number`.
+    columns:
+      - name: recall_number
+        description: Identificador do recall atribuido pela FDA.
+        data_tests: [not_null, unique]
+      - name: ingest_time
+        description: Instante UTC em que o extrator recebeu o registro.
+        data_tests: [not_null]

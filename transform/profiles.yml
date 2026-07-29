@@ -1,0 +1,30 @@
+# Perfil do dbt para o motor DuckDB.
+#
+# Nenhum segredo mora neste arquivo. Todas as variaveis sao exportadas por
+# `pharma-pipeline transform`, que as deriva do mesmo `Settings` usado pelo codigo Python.
+# Assim, catalogo Iceberg, endpoint do MinIO e credenciais tem uma unica fonte de verdade.
+pharma_freshness:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('PHARMA_DUCKDB_PATH') }}"
+      threads: 4
+      schema: main
+      extensions:
+        - json
+      plugins:
+        # Le as tabelas Iceberg da bronze via PyIceberg e as entrega ao DuckDB como Arrow.
+        # O dbt nunca escreve por aqui: a publicacao e feita por `pharma-pipeline publish`.
+        - module: iceberg
+          config:
+            catalog: local
+            type: sql
+            uri: "{{ env_var('PHARMA_ICEBERG_URI') }}"
+            warehouse: "{{ env_var('PHARMA_ICEBERG_WAREHOUSE') }}"
+            py-io-impl: pyiceberg.io.pyarrow.PyArrowFileIO
+            s3.endpoint: "{{ env_var('PHARMA_S3_ENDPOINT') }}"
+            s3.access-key-id: "{{ env_var('PHARMA_S3_ACCESS_KEY_ID') }}"
+            s3.secret-access-key: "{{ env_var('PHARMA_S3_SECRET_ACCESS_KEY') }}"
+            s3.region: "{{ env_var('PHARMA_S3_REGION') }}"
+            s3.force-virtual-addressing: "false"
