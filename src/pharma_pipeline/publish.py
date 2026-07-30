@@ -25,7 +25,7 @@ import duckdb
 
 from pharma_pipeline.config import Settings
 from pharma_pipeline.contracts import LakeTable, lake_table, tables_in_layer
-from pharma_pipeline.iceberg import UpsertResult, upsert_arrow
+from pharma_pipeline.iceberg import UpsertResult, replace_arrow, upsert_arrow
 
 LOGGER = logging.getLogger(__name__)
 
@@ -99,7 +99,10 @@ def publish_table(
         if own_connection:
             connection.close()
 
-    result = upsert_arrow(
+    # Tabelas de janela movel (serving) precisam de REPLACE: o UPSERT nao remove chaves que
+    # sairam da janela e deixaria alertas/bulas "recentes" eternamente no Iceberg.
+    escritor = replace_arrow if table.replace_on_publish else upsert_arrow
+    result = escritor(
         settings,
         table.identifier,
         arrow,
@@ -113,11 +116,12 @@ def publish_table(
         recreate=recreate,
     )
     LOGGER.info(
-        "%s: %d linhas lidas, %d inseridas, %d atualizadas.",
+        "%s: %d linhas lidas, %d inseridas, %d atualizadas%s.",
         table.identifier,
         arrow.num_rows,
         result.rows_inserted,
         result.rows_updated,
+        " (replace)" if table.replace_on_publish else "",
     )
     return PublishResult(table=table.identifier, rows_read=arrow.num_rows, upsert=result)
 

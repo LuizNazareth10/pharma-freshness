@@ -400,6 +400,23 @@ que existe para vigiá-los.
 
 ---
 
+### `gold.alertas_recentes` / `gold.bulas_atualizadas`
+
+> *Acrescentadas na Fase 6 — camada de serving.*
+
+Fatias denormalizadas para consumo futuro pela LLM. Não substituem o esquema estrela; leem
+dele.
+
+| Tabela | Grão | Janela | Publicação |
+|---|---|---|---|
+| `alertas_recentes` | `id_evento` (par fármaco–reação grave) | `receivedate` nos últimos 7 dias | `replace_on_publish` |
+| `bulas_atualizadas` | `id_bula` / `setid` | `published_date` nos últimos 3 dias | `replace_on_publish` |
+
+`replace_on_publish` existe porque a janela é móvel: UPSERT sozinho deixaria chaves expiradas
+no Iceberg. A comparação de conteúdo inteiro preserva a idempotência no mesmo dia.
+
+---
+
 ## Chaves substitutas
 
 Todas usam `md5` sobre as colunas do grão, com separador `|` e marcação explícita de nulo,
@@ -433,3 +450,5 @@ Duas propriedades importam:
 | `gold.fato_evento_adverso` | `id_evento` | um par fármaco–reação num relato |
 | `gold.fato_recall` | `id_recall` | uma ação de recolhimento |
 | `gold.metricas_frescor` | `id_medicao` | uma medição de frescor de uma fonte |
+| `gold.alertas_recentes` | `id_evento` | par fármaco–reação grave com receivedate nos últimos 7 dias (serving) |
+| `gold.bulas_atualizadas` | `id_bula` | bula com published_date nos últimos 3 dias (serving) |

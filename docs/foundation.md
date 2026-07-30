@@ -681,6 +681,10 @@ for evento in historico_faers:
 
 **Objetivo**: o projeto está documentado, reproduzível e pronto para a próxima fase.
 
+> **Estado da implementação:** ver [docs/fase-6.md](fase-6.md). Tabelas de serving
+> `gold.alertas_recentes` e `gold.bulas_atualizadas`, documentação de grão no `gold.yml`,
+> scripts em `scripts/day13` e `scripts/day14`.
+
 #### Dia 13 — Camada de consumo e documentação
 
 **O que fazer**:

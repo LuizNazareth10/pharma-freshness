@@ -9,7 +9,9 @@ farmacovigilância. A implementação cobre:
 - **Fase 3 — Modelagem (Dias 6–8):** dbt sobre DuckDB, camada silver, normalização RxNorm,
   modelo dimensional na gold e duas barreiras de qualidade;
 - **Fase 4 — Orquestração (Dias 9–10):** Airflow em container, DAGs diária e semanal, e a
-  medição do *staleness gap* por fonte com SLOs declarados.
+  medição do *staleness gap* por fonte com SLOs declarados;
+- **Fase 6 — Fechamento (Dias 13–14):** camada de serving para LLM, dbt docs e verificação
+  de reprodutibilidade.
 
 ## Arquitetura
 
@@ -95,6 +97,19 @@ pharma-pipeline freshness --formato texto     # relatório legível
 pharma-pipeline freshness --fail-on-breach    # sai 1 só se o atraso for NOSSO
 ```
 
+### Fase 6 — serving para LLM e fechamento
+
+```powershell
+.\scripts\day13\Build-Serving.ps1             # alertas_recentes + bulas_atualizadas + docs
+.\scripts\day13\Serve-Docs.ps1                # lineage em http://localhost:8082
+.\scripts\day14\Verify-Reproducibility.ps1    # dbt test + metricas_frescor + serving
+```
+
+```powershell
+pharma-pipeline query gold.alertas_recentes `
+  --columns safetyreportid,farmaco,reacao,fonte,ingest_time --limit 5
+```
+
 ### Consultar
 
 ```powershell
@@ -120,6 +135,7 @@ Os objetos podem ser vistos no console do MinIO em <http://localhost:9001>:
 | [Fase 2 — tutorial](docs/fase-2.md) | Ingestão, Iceberg, watermarks, idempotência |
 | [Fase 3 — tutorial](docs/fase-3.md) | dbt, silver, RxNorm, modelo dimensional, testes |
 | [Fase 4 — tutorial](docs/fase-4.md) | Airflow, DAGs, retry, catchup e medição do frescor |
+| [Fase 6 — tutorial](docs/fase-6.md) | Serving LLM, dbt docs, reprodutibilidade |
 | [Contratos — Fase 2](docs/contratos-dados-fase-2.md) | Grão e chaves da bronze |
 | [Contratos — Fase 3](docs/contratos-dados-fase-3.md) | Grão e chaves da silver e da gold |
 | [Decisões — Fase 2](docs/decisoes-arquitetura-fase-2.md) | Trade-offs da ingestão |
@@ -134,7 +150,7 @@ src/pharma_pipeline/     ingestão, Iceberg, RxNorm, publicação, qualidade, fr
 transform/               projeto dbt (modelos, macros, seeds, testes)
 dags/                    DAGs do Airflow e as funções que elas chamam
 docker/airflow/          imagem do Airflow com o pipeline instalado
-scripts/day1..day10/     roteiros PowerShell por dia de aprendizado
+scripts/day1..day14/     roteiros PowerShell por dia de aprendizado
 tests/                   testes unitários Python
 docs/                    tutoriais, contratos e decisões
 ```

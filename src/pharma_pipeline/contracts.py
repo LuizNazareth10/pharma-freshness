@@ -60,12 +60,18 @@ class LakeTable:
 
     `join_cols` define a identidade usada no UPSERT. Uma tabela sem chave declarada nao
     pode ser publicada de forma idempotente, por isso a chave e obrigatoria aqui.
+
+    `replace_on_publish` marca tabelas de JANELA MOVEL (serving): o conjunto de chaves
+    encolhe quando linhas envelhecem. UPSERT sozinho deixaria chaves expiradas no Iceberg;
+    a publicacao entao substitui o conteudo inteiro, sem perder a checagem de idempotencia
+    no mesmo dia (conteudo identico => sem snapshot novo).
     """
 
     layer: str
     name: str
     join_cols: tuple[str, ...]
     grain: str
+    replace_on_publish: bool = False
 
     @property
     def identifier(self) -> str:
@@ -188,6 +194,27 @@ _LAKE_TABLES: tuple[LakeTable, ...] = (
         name="metricas_frescor",
         join_cols=("id_medicao",),
         grain="Uma medicao de frescor de uma fonte em um instante; serie temporal, nao estado.",
+    ),
+    # --- gold: serving (Fase 6) — fatias denormalizadas para LLM / dashboards ----------
+    LakeTable(
+        layer="gold",
+        name="alertas_recentes",
+        join_cols=("id_evento",),
+        grain=(
+            "Um par farmaco-reacao grave com receivedate nos ultimos 7 dias; "
+            "fatia de serving denormalizada."
+        ),
+        replace_on_publish=True,
+    ),
+    LakeTable(
+        layer="gold",
+        name="bulas_atualizadas",
+        join_cols=("id_bula",),
+        grain=(
+            "Uma bula SPL com published_date nos ultimos 3 dias; "
+            "fatia de serving denormalizada."
+        ),
+        replace_on_publish=True,
     ),
 )
 

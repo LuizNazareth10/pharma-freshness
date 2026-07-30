@@ -324,6 +324,81 @@ models:
       - name: violou_sla_fonte
         data_tests: [not_null]
 
+  - name: alertas_recentes
+    description: >
+      Camada de serving para consumo futuro pela LLM (Fase 6).
+
+      Eventos adversos GRAVES com receivedate nos ultimos 7 dias, denormalizados com nome de
+      farmaco, termo de reacao, fonte e datas citaveis.
+
+      Grao: um par farmaco-reacao (`id_evento`) dentro de um relato grave recente.
+      Toda linha tem `fonte` e `ingest_time` preenchidos (garantido por teste not_null).
+
+      Contagem: somar linhas nao conta relatos clinicos — use count(distinct safetyreportid).
+    columns:
+      - name: id_evento
+        description: Chave do grao; mesma identidade de `fato_evento_adverso`.
+        data_tests: [not_null, unique]
+      - name: safetyreportid
+        description: Identificador do relato FAERS; usar distinct para contar casos.
+        data_tests: [not_null]
+      - name: farmaco
+        description: Nome de exibicao do farmaco (RxNorm quando existe).
+        data_tests: [not_null]
+      - name: reacao
+        description: Termo MedDRA de exibicao.
+        data_tests: [not_null]
+      - name: gravidade
+        description: Sempre verdadeiro nesta tabela (filtro de serving).
+        data_tests: [not_null]
+      - name: data_recebimento_fda
+        description: Data em que a FDA recebeu o relato; ancora da janela de 7 dias.
+        data_tests: [not_null]
+      - name: event_time
+        data_tests: [not_null]
+      - name: ingest_time
+        description: Quando o pipeline capturou a linha; citavel junto com a fonte.
+        data_tests: [not_null]
+      - name: fonte
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments: {values: ["faers"]}
+
+  - name: bulas_atualizadas
+    description: >
+      Camada de serving para consumo futuro pela LLM (Fase 6).
+
+      Bulas SPL cuja published_date cai nos ultimos 3 dias, com data de revisao, farmaco e
+      URL citaveis.
+
+      Grao: uma bula (`setid` / `id_bula`) na versao corrente conhecida.
+      Toda linha tem `fonte` e `ingest_time` preenchidos (garantido por teste not_null).
+    columns:
+      - name: id_bula
+        data_tests: [not_null, unique]
+      - name: setid
+        data_tests: [not_null, unique]
+      - name: data_revisao
+        description: published_date do DailyMed; ancora da janela de 3 dias.
+        data_tests: [not_null]
+      - name: farmaco
+        description: Nome de exibicao; cai para produto_nome quando o RxNorm nao resolve.
+        data_tests: [not_null]
+      - name: event_time
+        data_tests: [not_null]
+      - name: ingest_time
+        description: Quando o pipeline capturou a bula; citavel junto com a fonte.
+        data_tests: [not_null]
+      - name: fonte
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments: {values: ["dailymed"]}
+      - name: source_url
+        description: URL da bula no DailyMed, para citacao.
+        data_tests: [not_null]
+
 seeds:
   - name: fonte_referencia
     description: >

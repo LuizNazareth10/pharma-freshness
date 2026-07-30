@@ -384,6 +384,110 @@ def upsert_arrow(
     )
 
 
+def replace_arrow(
+    settings: Settings,
+    identifier: str,
+    incoming: pa.Table,
+    *,
+    join_cols: tuple[str, ...],
+    snapshot_properties: dict[str, str] | None = None,
+    recreate: bool = False,
+) -> UpsertResult:
+    """Substitui o conteudo inteiro de uma tabela Iceberg de forma idempotente.
+
+    Usado por tabelas de JANELA MOVEL (serving): o UPSERT nao remove chaves que sairam da
+    janela. Aqui o estado publicado passa a ser exatamente o lote lido do DuckDB.
+
+    Se o conteudo for byte-equivalente ao snapshot atual (mesmas chaves e mesmos valores),
+    nenhum commit e criado — a prova de idempotencia do mesmo dia continua valendo.
+    """
+    incoming = normalize_arrow(incoming)
+    missing = [column for column in join_cols if column not in incoming.column_names]
+    if missing:
+        raise ValueError(
+            f"{identifier}: colunas de chave ausentes no resultado: {', '.join(missing)}."
+        )
+
+    catalog = _catalog(settings)
+    namespace = identifier.split(".", 1)[0]
+    catalog.create_namespace_if_not_exists(namespace)
+
+    created = False
+    if recreate and catalog.table_exists(identifier):
+        catalog.drop_table(identifier)
+    try:
+        table = catalog.load_table(identifier)
+    except NoSuchTableError:
+        table = catalog.create_table(
+            identifier=identifier,
+            schema=incoming.schema,
+            properties={
+                "format-version": "2",
+                "write.parquet.compression-codec": "zstd",
+                "write.metadata.delete-after-commit.enabled": "false",
+            },
+        )
+        created = True
+
+    if not created:
+        _exigir_schema_compativel(table, incoming, identifier)
+
+    before = table.current_snapshot().snapshot_id if table.current_snapshot() else None
+    compare_cols = _compare_columns(incoming, join_cols)
+
+    if before is not None:
+        current = table.scan(selected_fields=join_cols + compare_cols).to_arrow()
+        if _conteudo_identico(incoming, current, join_cols, compare_cols):
+            return UpsertResult(
+                table_name=identifier,
+                input_rows=incoming.num_rows,
+                candidate_rows=0,
+                rows_inserted=0,
+                rows_updated=0,
+                snapshot_before=before,
+                snapshot_after=before,
+                created_table=False,
+            )
+
+    propriedades = {
+        "pipeline": "pharma-freshness",
+        "committed-at-utc": datetime.now(UTC).isoformat(),
+        "write-mode": "replace",
+        **(snapshot_properties or {}),
+    }
+    table.overwrite(incoming, snapshot_properties=propriedades)
+    table.refresh()
+    after = table.current_snapshot().snapshot_id if table.current_snapshot() else None
+    return UpsertResult(
+        table_name=identifier,
+        input_rows=incoming.num_rows,
+        candidate_rows=incoming.num_rows,
+        rows_inserted=incoming.num_rows,
+        rows_updated=0,
+        snapshot_before=before,
+        snapshot_after=after,
+        created_table=created,
+    )
+
+
+def _conteudo_identico(
+    incoming: pa.Table,
+    current: pa.Table,
+    join_cols: tuple[str, ...],
+    compare_cols: tuple[str, ...],
+) -> bool:
+    """True quando as duas tabelas tem o mesmo conjunto de (chave, fingerprint)."""
+    if incoming.num_rows != current.num_rows:
+        return False
+
+    def assinatura(row: dict[str, Any]) -> tuple[Any, ...]:
+        return tuple(row[column] for column in join_cols + compare_cols)
+
+    return {assinatura(row) for row in incoming.to_pylist()} == {
+        assinatura(row) for row in current.to_pylist()
+    }
+
+
 def sync_bronze_to_iceberg(settings: Settings, source: str) -> SyncResult:
     """Le os Parquet imutaveis da bronze e publica o estado atual na tabela Iceberg."""
     contract = contract_for(source)

@@ -25,6 +25,12 @@ x-airflow-common: &airflow-common
     # 8974 não escuta e o health check do compose marca o serviço como unhealthy mesmo com o
     # scheduler funcionando normalmente.
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    # Airflow 3 usa SimpleAuthManager (nao ha mais `airflow users create`). O usuario vem de
+    # SIMPLE_AUTH_MANAGER_USERS (nome:papel); a senha vem do arquivo JSON abaixo, gravado
+    # pelo airflow-init a partir de AIRFLOW_ADMIN_* do .env -- senao o apiserver gera uma
+    # senha aleatoria a cada subida e imprime so no log.
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "${AIRFLOW_ADMIN_USER:-admin}:admin"
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/pharma/.local/airflow/passwords.json
 
     # --- ambiente do pipeline -------------------------------------------------------------
     # Dentro da rede do compose o MinIO atende pelo nome do serviço, não por localhost.
@@ -150,8 +156,8 @@ services:
     networks:
       - lakehouse
 
-  # Migra o banco e cria o usuário administrador. Roda até o fim e encerra; os demais serviços
-  # esperam a conclusão com sucesso.
+  # Migra o banco e grava a senha do SimpleAuthManager. Roda até o fim e encerra; os demais
+  # serviços esperam a conclusão com sucesso.
   airflow-init:
     <<: *airflow-common
     depends_on:
@@ -162,10 +168,18 @@ services:
       - |
         set -e
         airflow db migrate
-        airflow users create \
-          --username "$${AIRFLOW_ADMIN_USER}" --password "$${AIRFLOW_ADMIN_PASSWORD}" \
-          --firstname Pharma --lastname Local --role Admin --email admin@example.com \
-          || echo "Usuario ja existe; seguindo."
+        # Airflow 3: nao existe `airflow users create`. A senha fica neste JSON sob .local
+        # (volume ja gravavel pelo usuario 50000). Sem ele o apiserver gera senha aleatoria.
+        mkdir -p /opt/pharma/.local/airflow
+        python - <<'PY'
+        import json, os
+        from pathlib import Path
+        user = os.environ["AIRFLOW_ADMIN_USER"]
+        password = os.environ["AIRFLOW_ADMIN_PASSWORD"]
+        path = Path("/opt/pharma/.local/airflow/passwords.json")
+        path.write_text(json.dumps({user: password}), encoding="utf-8")
+        print(f"Senha do SimpleAuthManager gravada para usuario '{user}'.")
+        PY
         echo "Airflow inicializado."
     environment:
       <<: *airflow-common-env

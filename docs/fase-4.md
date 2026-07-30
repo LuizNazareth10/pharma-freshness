@@ -324,7 +324,13 @@ Docker Desktop, o `.env` criado e a bronze já populada (Fase 2).
 O script espera o `api-server` ficar saudável antes de dizer que está pronto — evita o falso
 negativo de abrir o navegador cedo demais.
 
-Console em <http://localhost:8081> (usuário e senha no `.env`).
+Console em <http://localhost:8081> (usuário e senha = `AIRFLOW_ADMIN_*` no `.env`;
+padrão `admin` / `admin`).
+
+> No Airflow 3 o comando `airflow users create` **não existe** mais. A autenticação padrão é
+> o SimpleAuthManager: sem o arquivo de senhas, o apiserver gera uma senha aleatória e
+> imprime só no log. O `airflow-init` deste projeto grava a senha do `.env` em
+> `.local/airflow/passwords.json` para o login ser previsível.
 
 > A porta padrão é **8081**, não 8080: no Windows, o próprio Docker Desktop costuma manter a
 > 8080 ocupada.

@@ -7,6 +7,7 @@ from pharma_pipeline.iceberg import (
     _changed_rows,
     _chaves,
     _compare_columns,
+    _conteudo_identico,
     _deduplicate,
     _em_lotes,
     _separar_novos_de_alterados,
@@ -216,3 +217,18 @@ def test_lotes_de_tabela_vazia_nao_produzem_nada() -> None:
     vazia = _tabela([{"id": "a"}]).slice(0, 0)
 
     assert list(_em_lotes(vazia, 1000)) == []
+
+
+def test_conteudo_identico_ignora_ordem_das_linhas() -> None:
+    """REPLACE idempotente: mesma janela em outra ordem nao deve gerar snapshot."""
+    a = _tabela([{"id": "a", "v": 1}, {"id": "b", "v": 2}])
+    b = _tabela([{"id": "b", "v": 2}, {"id": "a", "v": 1}])
+
+    assert _conteudo_identico(a, b, ("id",), ("v",))
+
+
+def test_conteudo_identico_detecta_chave_que_saiu_da_janela() -> None:
+    atual = _tabela([{"id": "a", "v": 1}, {"id": "velho", "v": 9}])
+    novo = _tabela([{"id": "a", "v": 1}])
+
+    assert not _conteudo_identico(novo, atual, ("id",), ("v",))

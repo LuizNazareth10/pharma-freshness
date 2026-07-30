@@ -94,6 +94,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Recria os modelos incrementais do zero em vez de acrescentar.",
     )
+    transform.add_argument(
+        "--serve",
+        action="store_true",
+        help="Com `docs`: sobe o site local do lineage apos gerar o catalogo.",
+    )
 
     publish = sub.add_parser(
         "publish", help="Publica os modelos do DuckDB como tabelas Iceberg no MinIO."
@@ -173,6 +178,8 @@ def build_parser() -> argparse.ArgumentParser:
 def _cmd_transform(settings: Settings, args) -> None:
     # `docs` sozinho nao e um comando do dbt; o util aqui e gerar o catalogo de linhagem.
     command = "docs generate" if args.dbt_command == "docs" else args.dbt_command
+    if args.serve and args.dbt_command != "docs":
+        raise SystemExit("--serve so se aplica ao comando `docs`.")
 
     result = run_dbt(
         settings,
@@ -191,6 +198,12 @@ def _cmd_transform(settings: Settings, args) -> None:
     )
     if not result.success:
         raise SystemExit(1)
+
+    if args.serve:
+        # 8082: a 8080 costuma estar ocupada (Docker Desktop / outros labs); a 8081 e o Airflow.
+        print("Servindo dbt docs em http://localhost:8082 (Ctrl+C para parar).", flush=True)
+        run_dbt(settings, "docs serve", extra_args=("--port", "8082"))
+
 
 
 def _cmd_publish(settings: Settings, args) -> None:

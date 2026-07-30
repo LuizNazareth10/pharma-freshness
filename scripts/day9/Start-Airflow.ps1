@@ -47,7 +47,7 @@ $usuario = (Select-String -Path ".env" -Pattern "^AIRFLOW_ADMIN_USER=(.+)$").Mat
 
 Write-Host "`nAirflow no ar." -ForegroundColor Green
 Write-Host "  Console: http://localhost:$porta"
-Write-Host "  Usuario: $usuario (senha em AIRFLOW_ADMIN_PASSWORD no .env)"
+Write-Host "  Usuario / senha: os de AIRFLOW_ADMIN_* no .env (padrao admin / admin)"
 Write-Host "`nAs DAGs comecam PAUSADAS. Para ligar a diaria:" -ForegroundColor Yellow
 Write-Host "  docker compose --profile orquestracao exec airflow-scheduler ``"
 Write-Host "    airflow dags unpause pipeline_farmacovigilancia_diario"

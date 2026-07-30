@@ -52,6 +52,20 @@ def test_ordem_da_camada_respeita_dependencia_de_dimensao_antes_de_fato() -> Non
     assert ultima_dimensao < primeiro_fato
 
 
+def test_tabelas_de_serving_declaram_replace_por_janela_movel() -> None:
+    """Serving com janela movel precisa de REPLACE; UPSERT deixaria chaves expiradas."""
+    assert lake_table("gold.alertas_recentes").replace_on_publish is True
+    assert lake_table("gold.bulas_atualizadas").replace_on_publish is True
+    assert lake_table("gold.fato_evento_adverso").replace_on_publish is False
+
+
+def test_serving_vem_depois_dos_fatos() -> None:
+    """As fatias de serving leem fatos e dimensoes; publicam por ultimo."""
+    nomes = [tabela.name for tabela in tables_in_layer("gold")]
+    assert nomes.index("alertas_recentes") > nomes.index("fato_evento_adverso")
+    assert nomes.index("bulas_atualizadas") > nomes.index("dim_bula")
+
+
 def test_camada_desconhecida_falha() -> None:
     with pytest.raises(ValueError, match="Camada desconhecida"):
         tables_in_layer("platinum")
